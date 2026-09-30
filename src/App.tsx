@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -193,6 +193,38 @@ function Icon({ icon: I, size = 18, strokeWidth = 1.9, className = '' }: { icon:
   return <I size={size} strokeWidth={strokeWidth} className={className} />;
 }
 
+
+function LiveClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return <span>{now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}</span>;
+}
+
+function LoaderOverlay({ visible, label = 'Loading RideSathi' }: { visible: boolean; label?: string }) {
+  if (!visible) return null;
+  return <div className="loader-overlay" role="status" aria-live="polite">
+    <div className="loader-card">
+      <div className="loader-logo-wrap"><img src="/ridesathi-icon.png" alt="RideSathi" /><span className="loader-orbit" /></div>
+      <strong>{label}</strong>
+      <span>Mount Abu pilot</span>
+      <div className="loader-progress"><i /></div>
+    </div>
+  </div>;
+}
+
+function DesktopMapScene() {
+  return <div className="desktop-map-scene" aria-hidden="true">
+    <div className="desktop-scene-header"><div className="scene-brand"><img src="/ridesathi-icon.png" alt="" /><strong>RideSathi</strong></div><span><span className="live-scene-dot" /> Mount Abu live network</span></div>
+    <div className="scene-copy scene-copy-left"><span className="eyebrow">LIVE PILOT AREA</span><strong>Every ride<br /><em>has a route.</em></strong><span>Verified local mobility across<br />the hills of Mount Abu.</span></div>
+    <div className="scene-copy scene-copy-right"><span className="scene-stat-number">24</span><span>rides moving now</span><i className="scene-stat-line" /></div>
+    <div className="scene-map-grid"><span className="scene-road scene-road-a" /><span className="scene-road scene-road-b" /><span className="scene-road scene-road-c" /><span className="scene-road scene-road-d" /><span className="scene-road scene-road-e" /><span className="scene-route route-one" /><span className="scene-route route-two" /><span className="scene-pin scene-pin-a"><MapPin size={23} fill={colors.orange} /></span><span className="scene-pin scene-pin-b"><MapPin size={19} fill={colors.green} /></span><span className="scene-landmark landmark-lake">Nakki Lake</span><span className="scene-landmark landmark-point">Sunset Point</span><span className="scene-vehicle vehicle-one"><Bike size={20} fill={colors.green} /><b>RS 2048</b></span><span className="scene-vehicle vehicle-two"><Car size={20} fill={colors.orange} /><b>RS 1180</b></span></div>
+    <div className="scene-bottom"><span><span className="scene-key green-key" /> active rental</span><span><span className="scene-key orange-key" /> pickup nearby</span><span className="scene-coordinates">24.5926° N · 72.7156° E</span></div>
+  </div>;
+}
+
 function App() {
   const [authenticated, setAuthenticated] = useState(false);
   const [role, setRole] = useState<Role>('traveler');
@@ -219,6 +251,13 @@ function App() {
   const [formVehicle, setFormVehicle] = useState({ type: 'Scooter', make: '', model: '', reg: '', price: '', fuel: 'Petrol', seats: '2', notes: '' });
   const [returnNotes, setReturnNotes] = useState('');
   const [operatorActiveVehicleId, setOperatorActiveVehicleId] = useState('v1');
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadingLabel, setLoadingLabel] = useState('Starting RideSathi');
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setIsLoading(false), 850);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const currentUser = demoAccounts[role];
   const liveVehicle = vehicles.find((v) => v.id === 'v1') ?? vehicles[0];
@@ -230,12 +269,17 @@ function App() {
 
   const quickLogin = (nextRole: Role) => {
     const account = demoAccounts[nextRole];
-    setRole(nextRole);
-    setEmail(account.email);
-    setPassword('demo123');
-    setAuthenticated(true);
-    setScreen(nextRole === 'traveler' ? 'explore' : nextRole === 'operator' ? 'dashboard' : 'approvals');
-    notify(`Welcome back, ${account.name.split(' ')[0]}`);
+    setLoadingLabel(`Opening ${account.label} workspace`);
+    setIsLoading(true);
+    window.setTimeout(() => {
+      setRole(nextRole);
+      setEmail(account.email);
+      setPassword('demo123');
+      setAuthenticated(true);
+      setScreen(nextRole === 'traveler' ? 'explore' : nextRole === 'operator' ? 'dashboard' : 'approvals');
+      setIsLoading(false);
+      notify(`Welcome back, ${account.name.split(' ')[0]}`);
+    }, 480);
   };
 
   const handleLogin = () => {
@@ -253,7 +297,15 @@ function App() {
     setModal(null);
   };
 
-  const navigate = (next: Screen) => setScreen(next);
+  const navigate = (next: Screen) => {
+    if (next === screen) return;
+    setLoadingLabel('Loading your RideSathi screen');
+    setIsLoading(true);
+    window.setTimeout(() => {
+      setScreen(next);
+      setIsLoading(false);
+    }, 320);
+  };
 
   const updateBooking = (id: string, patch: Partial<Booking>) => {
     setBookings((all) => all.map((booking) => (booking.id === id ? { ...booking, ...patch } : booking)));
@@ -322,11 +374,13 @@ function App() {
   const approve = (label: string) => notify(`${label} approved and now visible in the network`);
   const reject = (label: string) => notify(`${label} sent back for review`);
 
-  if (!authenticated) return <LoginScreen email={email} password={password} setEmail={setEmail} setPassword={setPassword} role={role} setRole={setRole} onLogin={handleLogin} onDemo={quickLogin} />;
+  if (!authenticated) return <div className="preview-shell"><DesktopMapScene /><LoginScreen email={email} password={password} setEmail={setEmail} setPassword={setPassword} role={role} setRole={setRole} onLogin={handleLogin} onDemo={quickLogin} /><LoaderOverlay visible={isLoading} label={loadingLabel} /></div>;
 
   return (
-    <div className="mobile-app">
-      <div className="status-bar"><span>9:41</span><span className="status-icons"><span className="signal" /><span className="wifi" /><span className="battery"><i /></span></span></div>
+    <div className="preview-shell">
+      <DesktopMapScene />
+      <div className="mobile-app">
+      <div className="status-bar"><LiveClock /><span className="status-icons"><span className="signal" /><span className="wifi" /><span className="battery"><i /></span></span></div>
       {role === 'traveler' && <TravelerApp />}
       {role === 'operator' && <OperatorApp />}
       {role === 'admin' && <AdminApp />}
@@ -338,6 +392,8 @@ function App() {
       {modal === 'start' && <ConfirmModal title="Start this rental?" text="Token verified. Confirm handover only when the vehicle and documents are checked." confirm="Start rental" onConfirm={startRental} onClose={() => setModal(null)} />}
       {modal === 'end' && <ConfirmModal title="End active rental?" text="The vehicle will move to the return check and location sharing will stop." confirm="Continue to return" onConfirm={() => { setModal(null); navigate('return'); }} onClose={() => setModal(null)} />}
       {modal === 'return' && <ConfirmModal title="Close this rental?" text="Confirm the vehicle is returned and the return notes are complete." confirm="Close rental" onConfirm={closeRental} onClose={() => setModal(null)} />}
+      <LoaderOverlay visible={isLoading} label={loadingLabel} />
+      </div>
     </div>
   );
 
@@ -543,7 +599,7 @@ function App() {
 }
 
 function LoginScreen({ email, password, setEmail, setPassword, role, setRole, onLogin, onDemo }: { email: string; password: string; setEmail: (v: string) => void; setPassword: (v: string) => void; role: Role; setRole: (r: Role) => void; onLogin: () => void; onDemo: (r: Role) => void }) {
-  return <div className="login-screen"><div className="login-status"><span>9:41</span><span className="status-icons"><span className="signal" /><span className="wifi" /><span className="battery"><i /></span></span></div><div className="login-brand"><div className="logo-mark"><Navigation size={21} fill="white" /></div><span>Ride<span>Sathi</span></span><small>VERIFIED LOCAL RIDES</small></div><div className="login-hero"><div className="login-map"><div className="login-road road-one" /><div className="login-road road-two" /><div className="login-road road-three" /><span className="login-map-pin"><MapPin size={27} fill={colors.orange} /></span><span className="login-map-dot dot-one" /><span className="login-map-dot dot-two" /></div><div className="login-hero-copy"><span className="eyebrow">YOUR RIDE, YOUR SATHI</span><h1>See Mount Abu<br /><em>your way.</em></h1><p>Verified rentals for unhurried hill days.</p></div></div><div className="login-card"><div className="role-selector"><button className={role === 'traveler' ? 'active' : ''} onClick={() => { setRole('traveler'); setEmail('traveler@demo.com'); }}>Traveler</button><button className={role === 'operator' ? 'active' : ''} onClick={() => { setRole('operator'); setEmail('operator@demo.com'); }}>Operator</button><button className={role === 'admin' ? 'active' : ''} onClick={() => { setRole('admin'); setEmail('admin@demo.com'); }}>Admin</button></div><div className="login-fields"><label><span>Email address</span><div className="input-wrap"><Smartphone size={17} /><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></div></label><label><span>Password</span><div className="input-wrap"><LockKeyhole size={17} /><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} /><button><EyeIcon /></button></div></label></div><button className="primary-btn login-btn" onClick={onLogin}>Continue to RideSathi <ArrowRight size={17} /></button><div className="demo-helper"><span>DEMO ACCESS</span><p>Tap a role to explore the full experience</p><div className="demo-links"><button onClick={() => onDemo('traveler')}><CircleUserRound size={14} /> Traveler <ArrowRight size={13} /></button><button onClick={() => onDemo('operator')}><Bike size={14} /> Operator <ArrowRight size={13} /></button><button onClick={() => onDemo('admin')}><ShieldCheck size={14} /> Admin <ArrowRight size={13} /></button></div></div></div><p className="login-footer"><ShieldCheck size={13} /> Safe, verified rentals · Mount Abu pilot</p></div>;
+  return <div className="login-screen"><div className="login-status"><LiveClock /><span className="status-icons"><span className="signal" /><span className="wifi" /><span className="battery"><i /></span></span></div><div className="login-brand"><div className="logo-mark"><Navigation size={21} fill="white" /></div><span>Ride<span>Sathi</span></span><small>VERIFIED LOCAL RIDES</small></div><div className="login-hero"><div className="login-map"><div className="login-road road-one" /><div className="login-road road-two" /><div className="login-road road-three" /><span className="login-map-pin"><MapPin size={27} fill={colors.orange} /></span><span className="login-map-dot dot-one" /><span className="login-map-dot dot-two" /></div><div className="login-hero-copy"><span className="eyebrow">YOUR RIDE, YOUR SATHI</span><h1>See Mount Abu<br /><em>your way.</em></h1><p>Verified rentals for unhurried hill days.</p></div></div><div className="login-card"><div className="role-selector"><button className={role === 'traveler' ? 'active' : ''} onClick={() => { setRole('traveler'); setEmail('traveler@demo.com'); }}>Traveler</button><button className={role === 'operator' ? 'active' : ''} onClick={() => { setRole('operator'); setEmail('operator@demo.com'); }}>Operator</button><button className={role === 'admin' ? 'active' : ''} onClick={() => { setRole('admin'); setEmail('admin@demo.com'); }}>Admin</button></div><div className="login-fields"><label><span>Email address</span><div className="input-wrap"><Smartphone size={17} /><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></div></label><label><span>Password</span><div className="input-wrap"><LockKeyhole size={17} /><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} /><button><EyeIcon /></button></div></label></div><button className="primary-btn login-btn" onClick={onLogin}>Continue to RideSathi <ArrowRight size={17} /></button><div className="demo-helper"><span>DEMO ACCESS</span><p>Tap a role to explore the full experience</p><div className="demo-links"><button onClick={() => onDemo('traveler')}><CircleUserRound size={14} /> Traveler <ArrowRight size={13} /></button><button onClick={() => onDemo('operator')}><Bike size={14} /> Operator <ArrowRight size={13} /></button><button onClick={() => onDemo('admin')}><ShieldCheck size={14} /> Admin <ArrowRight size={13} /></button></div></div></div><p className="login-footer"><ShieldCheck size={13} /> Safe, verified rentals · Mount Abu pilot</p></div>;
 }
 
 function BottomTabs({ tabs, active, onChange }: { tabs: { key: Screen; label: string; icon: LucideIcon }[]; active: Screen; onChange: (key: Screen) => void }) {
