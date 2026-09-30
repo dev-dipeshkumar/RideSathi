@@ -271,6 +271,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadingLabel, setLoadingLabel] = useState('Starting RideSathi');
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notificationsRead, setNotificationsRead] = useState(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setIsLoading(false), 850);
@@ -405,7 +406,7 @@ function App() {
       {role === 'operator' && <OperatorApp />}
       {role === 'admin' && <AdminApp />}
       {toast && <div className="toast"><CheckCircle2 size={17} /> {toast}</div>}
-      {notificationsOpen && <NotificationPopover onClose={() => setNotificationsOpen(false)} />}
+      {notificationsOpen && <NotificationPopover onClose={() => setNotificationsOpen(false)} onMarkRead={() => setNotificationsRead(true)} notificationsRead={notificationsRead} />}
       {modal === 'filters' && <FilterSheet onClose={() => setModal(null)} />}
       {modal === 'sos' && <ConfirmModal danger title="Send SOS alert?" text={locationConsent ? 'Your live location will be shared with the operator and RideSathi support.' : 'Location sharing is off. We will send the alert without your location.'} confirm="Send SOS" onConfirm={raiseSos} onClose={() => setModal(null)} />}
       {modal === 'cancel' && <ConfirmModal title="Cancel this booking?" text="Cancellation policy applies. Your refund status will be shown after confirmation." confirm="Cancel booking" onConfirm={() => { updateBooking(selectedBooking.id, { status: 'CANCELLED' }); setModal(null); navigate('bookings'); notify('Booking cancelled'); }} onClose={() => setModal(null)} />}
@@ -446,7 +447,7 @@ function App() {
   function TravelerExplore() {
     const visibleVehicles = vehicles.filter((vehicle) => (filterType === 'All' ? true : vehicle.type === filterType) && vehicle.verified && vehicle.status !== 'PENDING_INSPECTION');
     return <div className="screen scroll-screen">
-      <div className="topbar explore-topbar"><div><div className="eyebrow"><MapPin size={13} fill={colors.orange} /> PILOT DESTINATION</div><h1>Mount Abu <ChevronDown size={18} /></h1></div><button className="icon-btn notification" onClick={openNotifications}><Bell size={19} /><span /></button></div>
+      <div className="topbar explore-topbar"><div><div className="eyebrow"><MapPin size={13} fill={colors.orange} /> PILOT DESTINATION</div><h1>Mount Abu <ChevronDown size={18} /></h1></div><button className="icon-btn notification" onClick={openNotifications}><Bell size={19} />{!notificationsRead && <span />}</button></div>
       <div className="welcome-line"><span>Good morning, Aarav</span><Sparkles size={14} color={colors.orange} /></div>
       <button className="search-control" onClick={() => setModal('filters')}><Search size={19} /><span>Where will you ride today?</span><span className="filter-circle"><SlidersHorizontal size={16} /></span></button>
       <div className="mini-map"><div className="map-copy"><span className="map-kicker">EXPLORE THE HILLS</span><strong>Your next view is<br />around the corner.</strong><button onClick={() => setModal('filters')}>See nearby rides <ArrowRight size={14} /></button></div><div className="map-lines"><span /><span /><span /><i className="map-pin pin-a"><MapPin size={21} fill={colors.orange} /></i><i className="map-pin pin-b"><MapPin size={18} fill={colors.green} /></i><small>NAKKI LAKE</small></div></div>
@@ -627,8 +628,8 @@ function App() {
   }
 }
 
-function NotificationPopover({ onClose }: { onClose: () => void }) {
-  return <div className="notification-layer" onClick={onClose}><div className="notification-popover" onClick={(event) => event.stopPropagation()}><div className="notification-header"><div><span className="eyebrow">RIDESATHI INBOX</span><h2>Notifications</h2></div><button className="icon-btn light" onClick={onClose}><X size={17} /></button></div><div className="notification-list"><div className="notification-item unread"><div className="notification-item-icon green"><CheckCircle2 size={17} /></div><div><strong>Booking confirmed</strong><span>Your Suzuki Access pickup is confirmed for 18 Oct.</span><small>8 min ago</small></div><i /></div><div className="notification-item unread"><div className="notification-item-icon orange"><ShieldCheck size={17} /></div><div><strong>KYC verified</strong><span>Your masked ID is ready for safer handover.</span><small>22 min ago</small></div><i /></div><div className="notification-item"><div className="notification-item-icon blue"><Headphones size={17} /></div><div><strong>Support is on standby</strong><span>Live support is available throughout your active rental.</span><small>Yesterday</small></div></div></div><button className="notification-footer" onClick={onClose}>Mark all as read <Check size={14} /></button></div></div>;
+function NotificationPopover({ onClose, onMarkRead, notificationsRead }: { onClose: () => void; onMarkRead: () => void; notificationsRead: boolean }) {
+  return <div className="notification-layer" onClick={onClose}><div className="notification-popover" onClick={(event) => event.stopPropagation()}><div className="notification-header"><div><span className="eyebrow">RIDESATHI INBOX</span><h2>Notifications</h2></div><button className="icon-btn light" onClick={onClose}><X size={17} /></button></div><div className="notification-list"><div className={`notification-item ${!notificationsRead ? 'unread' : ''}`}><div className="notification-item-icon green"><CheckCircle2 size={17} /></div><div><strong>Booking confirmed</strong><span>Your Suzuki Access pickup is confirmed for 18 Oct.</span><small>8 min ago</small></div>{!notificationsRead && <i />}</div><div className={`notification-item ${!notificationsRead ? 'unread' : ''}`}><div className="notification-item-icon orange"><ShieldCheck size={17} /></div><div><strong>KYC verified</strong><span>Your masked ID is ready for safer handover.</span><small>22 min ago</small></div>{!notificationsRead && <i />}</div><div className="notification-item"><div className="notification-item-icon blue"><Headphones size={17} /></div><div><strong>Support is on standby</strong><span>Live support is available throughout your active rental.</span><small>Yesterday</small></div></div></div><button className="notification-footer" onClick={onMarkRead}>{notificationsRead ? 'All notifications read' : 'Mark all as read'} <Check size={14} /></button></div></div>;
 }
 
 function LoginScreen({ email, password, setEmail, setPassword, role, setRole, onLogin, onDemo }: { email: string; password: string; setEmail: (v: string) => void; setPassword: (v: string) => void; role: Role; setRole: (r: Role) => void; onLogin: () => void; onDemo: (r: Role) => void }) {
