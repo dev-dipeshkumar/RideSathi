@@ -95,7 +95,11 @@ type Screen =
   | 'reviews'
   | 'approvals'
   | 'adminBookings'
+  | 'adminBookingDetail'
+  | 'adminKycReview'
+  | 'adminKycDetail'
   | 'adminSOS'
+  | 'sosDetail'
   | 'metrics';
 
 type VehicleStatus = 'AVAILABLE' | 'RESERVED' | 'RENTED' | 'PENDING_INSPECTION' | 'MAINTENANCE' | 'BLOCKED';
@@ -141,6 +145,30 @@ type SOSAlert = {
   location: string;
 };
 
+type ReturnCondition = 'GOOD' | 'INSPECTION' | 'MAINTENANCE';
+
+type ClosedRentalSummary = {
+  bookingId: string;
+  vehicleName: string;
+  token: string;
+  vehicleStatus: 'AVAILABLE' | 'PENDING_INSPECTION';
+  condition: ReturnCondition;
+  closedAt: string;
+};
+
+type KycReview = {
+  id: string;
+  traveler: string;
+  bookingId: string;
+  status: 'PENDING' | 'VERIFIED' | 'REJECTED';
+  idType: string;
+  maskedId: string;
+  submitted: string;
+  consent: string;
+};
+
+type HandoverTokenState = 'idle' | 'invalid' | 'expired' | 'already-used' | 'valid';
+
 const colors = {
   green: '#1f684b',
   orange: '#e89532',
@@ -176,6 +204,38 @@ const alertsSeed: SOSAlert[] = [
   { id: 'SOS-09', traveler: 'Aarav Mehta', vehicle: 'Honda Activa 6G', time: 'Just now · 10:56 AM', status: 'RAISED', location: 'Near Nakki Lake · 24.5926, 72.7156' },
   { id: 'SOS-08', traveler: 'Priya Shah', vehicle: 'Royal Enfield Classic', time: 'Yesterday · 5:40 PM', status: 'RESOLVED', location: 'Sunset Point · 24.6061, 72.7088' },
 ];
+
+const kycReviewsSeed: KycReview[] = [
+  { id: 'KYC-104', traveler: 'Aarav Mehta', bookingId: 'RS-1932', status: 'PENDING', idType: 'Driving licence', maskedId: 'DL •••• 6218', submitted: 'Today · 10:12 AM', consent: 'Consent granted for verification' },
+  { id: 'KYC-103', traveler: 'Priya Shah', bookingId: 'RS-2048', status: 'VERIFIED', idType: 'Aadhaar', maskedId: 'Aadhaar •••• 8842', submitted: 'Yesterday · 6:15 PM', consent: 'Consent granted for verification' },
+  { id: 'KYC-099', traveler: 'Kabir Joshi', bookingId: 'RS-1780', status: 'REJECTED', idType: 'Passport', maskedId: 'Passport •••• 1904', submitted: '10 Oct · 4:40 PM', consent: 'Consent granted for verification' },
+];
+
+type AppNotification = {
+  title: string;
+  body: string;
+  time: string;
+  tone: 'green' | 'orange' | 'blue' | 'red';
+  icon: 'check' | 'shield' | 'headphones' | 'bike' | 'alert' | 'file';
+};
+
+const notificationsByRole: Record<Role, AppNotification[]> = {
+  traveler: [
+    { title: 'Booking confirmed', body: 'Your Suzuki Access pickup is confirmed for 18 Oct.', time: '8 min ago', tone: 'green', icon: 'check' },
+    { title: 'KYC verified', body: 'Your masked ID is ready for safer handover.', time: '22 min ago', tone: 'orange', icon: 'shield' },
+    { title: 'Support is on standby', body: 'Live support is available throughout your active rental.', time: 'Yesterday', tone: 'blue', icon: 'headphones' },
+  ],
+  operator: [
+    { title: 'New booking ready', body: 'Priya Shah is ready for token handover today.', time: '8 min ago', tone: 'green', icon: 'bike' },
+    { title: 'SOS alert raised', body: 'Aarav Mehta needs support near Nakki Lake.', time: 'Just now', tone: 'red', icon: 'alert' },
+    { title: 'Return closure update', body: 'A completed rental is ready for traveler feedback.', time: 'Yesterday', tone: 'blue', icon: 'check' },
+  ],
+  admin: [
+    { title: 'Operator approval pending', body: 'Sharma Rides has submitted documents for review.', time: '2 hours ago', tone: 'orange', icon: 'file' },
+    { title: 'Vehicle approval pending', body: 'Honda Dio is ready for inspection.', time: '3 hours ago', tone: 'green', icon: 'bike' },
+    { title: 'SOS alert raised', body: 'One safety incident needs attention now.', time: 'Just now', tone: 'red', icon: 'alert' },
+  ],
+};
 
 const formatCurrency = (value: number) => `₹${value.toLocaleString('en-IN')}`;
 
@@ -250,10 +310,13 @@ function App() {
   const [vehicles, setVehicles] = useState<Vehicle[]>(vehiclesSeed);
   const [bookings, setBookings] = useState<Booking[]>(bookingsSeed);
   const [alerts, setAlerts] = useState<SOSAlert[]>(alertsSeed);
+  const [kycReviews, setKycReviews] = useState<KycReview[]>(kycReviewsSeed);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle>(vehiclesSeed[0]);
   const [selectedBooking, setSelectedBooking] = useState<Booking>(bookingsSeed[0]);
+  const [selectedKyc, setSelectedKyc] = useState<KycReview>(kycReviewsSeed[0]);
+  const [selectedAlert, setSelectedAlert] = useState<SOSAlert>(alertsSeed[0]);
   const [toast, setToast] = useState<string | null>(null);
-  const [modal, setModal] = useState<'filters' | 'sos' | 'cancel' | 'logout' | 'start' | 'end' | 'return' | null>(null);
+  const [modal, setModal] = useState<'filters' | 'sos' | 'cancel' | 'logout' | 'start' | 'end' | 'return' | 'adminActions' | null>(null);
   const [activeRental, setActiveRental] = useState(true);
   const [locationConsent, setLocationConsent] = useState(false);
   const [sosRaised, setSosRaised] = useState(false);
@@ -266,18 +329,39 @@ function App() {
   const [operatorTab, setOperatorTab] = useState<'all' | 'upcoming' | 'active'>('all');
   const [travelerBookingTab, setTravelerBookingTab] = useState<'all' | 'upcoming' | 'past'>('all');
   const [formVehicle, setFormVehicle] = useState({ type: 'Scooter', make: '', model: '', reg: '', price: '', fuel: 'Petrol', seats: '2', notes: '' });
+  const [returnToken, setReturnToken] = useState('');
+  const [returnVerified, setReturnVerified] = useState(false);
+  const [returnError, setReturnError] = useState(false);
+  const [returnCondition, setReturnCondition] = useState<ReturnCondition>('GOOD');
   const [returnNotes, setReturnNotes] = useState('');
+  const [lastClosedRental, setLastClosedRental] = useState<ClosedRentalSummary | null>(null);
   const [operatorActiveVehicleId, setOperatorActiveVehicleId] = useState('v1');
+  const [handoverToken, setHandoverToken] = useState('');
+  const [handoverTokenState, setHandoverTokenState] = useState<HandoverTokenState>('idle');
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginLoading, setLoginLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [loadingLabel, setLoadingLabel] = useState('Starting RideSathi');
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [notificationsRead, setNotificationsRead] = useState(false);
+  const [notificationsReadByRole, setNotificationsReadByRole] = useState<Record<Role, boolean>>(() => {
+    try {
+      const stored = window.localStorage.getItem('ridesathi-notifications-read');
+      return stored ? { traveler: false, operator: false, admin: false, ...JSON.parse(stored) } : { traveler: false, operator: false, admin: false };
+    } catch {
+      return { traveler: false, operator: false, admin: false };
+    }
+  });
 
   useEffect(() => {
     const timer = window.setTimeout(() => setIsLoading(false), 850);
     return () => window.clearTimeout(timer);
   }, []);
 
+  useEffect(() => {
+    window.localStorage.setItem('ridesathi-notifications-read', JSON.stringify(notificationsReadByRole));
+  }, [notificationsReadByRole]);
+
+  const notificationsRead = notificationsReadByRole[role];
   const currentUser = demoAccounts[role];
   const liveVehicle = vehicles.find((v) => v.id === 'v1') ?? vehicles[0];
 
@@ -288,8 +372,14 @@ function App() {
 
   const openNotifications = () => setNotificationsOpen(true);
 
+  const markNotificationsRead = () => {
+    setNotificationsReadByRole((current) => ({ ...current, [role]: true }));
+  };
+
   const quickLogin = (nextRole: Role) => {
     const account = demoAccounts[nextRole];
+    setLoginError(null);
+    setLoginLoading(true);
     setLoadingLabel(`Opening ${account.label} workspace`);
     setIsLoading(true);
     window.setTimeout(() => {
@@ -298,6 +388,7 @@ function App() {
       setPassword('demo123');
       setAuthenticated(true);
       setScreen(nextRole === 'traveler' ? 'explore' : nextRole === 'operator' ? 'dashboard' : 'approvals');
+      setLoginLoading(false);
       setIsLoading(false);
       notify(`Welcome back, ${account.name.split(' ')[0]}`);
     }, 480);
@@ -306,9 +397,11 @@ function App() {
   const handleLogin = () => {
     const matchedRole = (Object.keys(demoAccounts) as Role[]).find((key) => demoAccounts[key].email === email.trim().toLowerCase());
     if (!matchedRole || password.length < 4) {
-      notify('Use one of the demo accounts below');
+      setLoginError('Enter a valid RideSathi demo email and a password with at least 4 characters.');
+      setLoginLoading(false);
       return;
     }
+    setLoginError(null);
     quickLogin(matchedRole);
   };
 
@@ -371,8 +464,27 @@ function App() {
     notify('SOS sent to operator & RideSathi support');
   };
 
+  const openSosDetail = (alert: SOSAlert) => {
+    setSelectedAlert(alert);
+    navigate('sosDetail');
+  };
+
+  const updateAlertStatus = (id: string, status: SOSAlert['status']) => {
+    setAlerts((all) => all.map((alert) => alert.id === id ? { ...alert, status } : alert));
+    setSelectedAlert((alert) => alert.id === id ? { ...alert, status } : alert);
+    notify(status === 'ACKNOWLEDGED' ? 'Alert acknowledged' : 'Alert marked resolved');
+  };
+
   const startRental = () => {
     setActiveRental(true);
+    setLastClosedRental(null);
+    setReturnToken('');
+    setReturnVerified(false);
+    setReturnError(false);
+    setReturnCondition('GOOD');
+    setReturnNotes('');
+    setHandoverToken('');
+    setHandoverTokenState('idle');
     setSelectedBooking((booking) => ({ ...booking, status: 'ACTIVE' }));
     updateBooking(selectedBooking.id, { status: 'ACTIVE' });
     setOperatorActiveVehicleId(selectedBooking.vehicleId);
@@ -383,19 +495,43 @@ function App() {
   };
 
   const closeRental = () => {
+    if (!returnVerified) {
+      notify('Verify the return token first');
+      setModal(null);
+      return;
+    }
+
+    const nextVehicleStatus: ClosedRentalSummary['vehicleStatus'] = returnCondition === 'GOOD' ? 'AVAILABLE' : 'PENDING_INSPECTION';
+    const closedBooking: Booking = { ...selectedBooking, status: 'COMPLETED' };
+    const closedSummary: ClosedRentalSummary = {
+      bookingId: closedBooking.id,
+      vehicleName: closedBooking.vehicleName,
+      token: closedBooking.token,
+      vehicleStatus: nextVehicleStatus,
+      condition: returnCondition,
+      closedAt: 'Just now',
+    };
+
     setActiveRental(false);
-    setSelectedBooking((booking) => ({ ...booking, status: 'RETURNED' }));
-    updateBooking(selectedBooking.id, { status: 'RETURNED' });
-    setVehicles((all) => all.map((v) => (v.id === selectedBooking.vehicleId ? { ...v, status: 'AVAILABLE' } : v)));
+    setLocationConsent(false);
+    setSelectedBooking(closedBooking);
+    setLastClosedRental(closedSummary);
+    updateBooking(closedBooking.id, { status: 'COMPLETED' });
+    setVehicles((all) => all.map((v) => (v.id === closedBooking.vehicleId ? { ...v, status: nextVehicleStatus } : v)));
+    setReturnToken('');
+    setReturnVerified(false);
+    setReturnError(false);
+    setReturnCondition('GOOD');
+    setReturnNotes('');
     setModal(null);
-    notify('Rental closed · vehicle marked available');
+    notify(`Rental closed · vehicle ${nextVehicleStatus === 'AVAILABLE' ? 'marked available' : 'sent for inspection'}`);
     navigate(role === 'operator' ? 'activeRentals' : 'bookings');
   };
 
   const approve = (label: string) => notify(`${label} approved and now visible in the network`);
   const reject = (label: string) => notify(`${label} sent back for review`);
 
-  if (!authenticated) return <div className="preview-shell"><DesktopMapScene /><LoginScreen email={email} password={password} setEmail={setEmail} setPassword={setPassword} role={role} setRole={setRole} onLogin={handleLogin} onDemo={quickLogin} /><LoaderOverlay visible={isLoading} label={loadingLabel} /></div>;
+  if (!authenticated) return <div className="preview-shell"><DesktopMapScene /><LoginScreen email={email} password={password} setEmail={(value) => { setEmail(value); setLoginError(null); }} setPassword={(value) => { setPassword(value); setLoginError(null); }} role={role} setRole={(nextRole) => { setRole(nextRole); setLoginError(null); }} onLogin={handleLogin} onDemo={quickLogin} error={loginError} loading={loginLoading} /><LoaderOverlay visible={isLoading} label={loadingLabel} /></div>;
 
   return (
     <div className="preview-shell">
@@ -406,7 +542,7 @@ function App() {
       {role === 'operator' && <OperatorApp />}
       {role === 'admin' && <AdminApp />}
       {toast && <div className="toast"><CheckCircle2 size={17} /> {toast}</div>}
-      {notificationsOpen && <NotificationPopover onClose={() => setNotificationsOpen(false)} onMarkRead={() => setNotificationsRead(true)} notificationsRead={notificationsRead} />}
+      {notificationsOpen && <NotificationPopover role={role} onClose={() => setNotificationsOpen(false)} onMarkRead={markNotificationsRead} notificationsRead={notificationsRead} />}
       {modal === 'filters' && <FilterSheet onClose={() => setModal(null)} />}
       {modal === 'sos' && <ConfirmModal danger title="Send SOS alert?" text={locationConsent ? 'Your live location will be shared with the operator and RideSathi support.' : 'Location sharing is off. We will send the alert without your location.'} confirm="Send SOS" onConfirm={raiseSos} onClose={() => setModal(null)} />}
       {modal === 'cancel' && <ConfirmModal title="Cancel this booking?" text="Cancellation policy applies. Your refund status will be shown after confirmation." confirm="Cancel booking" onConfirm={() => { updateBooking(selectedBooking.id, { status: 'CANCELLED' }); setModal(null); navigate('bookings'); notify('Booking cancelled'); }} onClose={() => setModal(null)} />}
@@ -414,6 +550,7 @@ function App() {
       {modal === 'start' && <ConfirmModal title="Start this rental?" text="Token verified. Confirm handover only when the vehicle and documents are checked." confirm="Start rental" onConfirm={startRental} onClose={() => setModal(null)} />}
       {modal === 'end' && <ConfirmModal title="End active rental?" text="The vehicle will move to the return check and location sharing will stop." confirm="Continue to return" onConfirm={() => { setModal(null); navigate('return'); }} onClose={() => setModal(null)} />}
       {modal === 'return' && <ConfirmModal title="Close this rental?" text="Confirm the vehicle is returned and the return notes are complete." confirm="Close rental" onConfirm={closeRental} onClose={() => setModal(null)} />}
+      {modal === 'adminActions' && <AdminBookingActionSheet booking={selectedBooking} onClose={() => setModal(null)} onAction={(message) => { setModal(null); notify(message); }} />}
       <LoaderOverlay visible={isLoading} label={loadingLabel} />
       </div>
     </div>
@@ -524,11 +661,11 @@ function App() {
       { key: 'alerts' as Screen, label: 'Alerts', icon: ShieldAlert },
     ];
     const isHome = ['dashboard', 'operatorBookings', 'vehicles', 'activeRentals', 'alerts'].includes(screen);
-    return <>{screen === 'dashboard' && <OperatorDashboard />}{screen === 'operatorBookings' && <OperatorBookings />}{screen === 'vehicles' && <OperatorVehicles />}{screen === 'vehicleForm' && <VehicleForm />}{screen === 'operatorBookingDetail' && <OperatorBookingDetail />}{screen === 'handover' && <HandoverScreen />}{screen === 'activeRentals' && <OperatorActiveRentals />}{screen === 'activeRentalDetail' && <OperatorActiveRentalDetail />}{screen === 'return' && <ReturnScreen />}{screen === 'alerts' && <OperatorAlerts />}{screen === 'reviews' && <ReviewsScreen />}{isHome && <BottomTabs tabs={tabs} active={screen} onChange={navigate} />}</>;
+    return <>{screen === 'dashboard' && <OperatorDashboard />}{screen === 'operatorBookings' && <OperatorBookings />}{screen === 'vehicles' && <OperatorVehicles />}{screen === 'vehicleForm' && <VehicleForm />}{screen === 'operatorBookingDetail' && <OperatorBookingDetail />}{screen === 'handover' && <HandoverScreen />}{screen === 'activeRentals' && <OperatorActiveRentals />}{screen === 'activeRentalDetail' && <OperatorActiveRentalDetail />}{screen === 'return' && <ReturnScreen />}{screen === 'alerts' && <OperatorAlerts />}{screen === 'sosDetail' && <SosDetail />}{screen === 'reviews' && <ReviewsScreen />}{isHome && <BottomTabs tabs={tabs} active={screen} onChange={navigate} />}</>;
   }
 
   function OperatorDashboard() {
-    return <div className="screen scroll-screen"><AppHeader title="Good morning, Raj" subtitle="Abu Hill Rentals · Mount Abu" action={<button className="icon-btn" onClick={() => setModal('logout')}><MoreHorizontal size={20} /></button>} /><div className="operator-status"><span className="pulse-dot" /> Operator account active <ChevronRight size={15} /></div><div className="metric-grid"><MetricTile label="Vehicles" value="7" trend="6 active" icon={Bike} /><MetricTile label="Active rentals" value="1" trend="Live now" icon={Navigation} blue /><MetricTile label="Upcoming" value="4" trend="This week" icon={CalendarDays} orange /><MetricTile label="Avg. rating" value="4.8" trend="76 reviews" icon={Star} /></div><div className="section-head"><div><h2>Quick actions</h2><p>Keep your fleet moving</p></div></div><div className="quick-actions"><QuickAction icon={Plus} label="Add vehicle" onClick={() => navigate('vehicleForm')} /><QuickAction icon={ReceiptText} label="Bookings" onClick={() => navigate('operatorBookings')} /><QuickAction icon={Navigation} label="Live rentals" onClick={() => navigate('activeRentals')} /><QuickAction icon={MessageCircle} label="Reviews" onClick={() => navigate('reviews')} /></div><div className="section-head"><div><h2>Needs your attention</h2><p>Stay on top of today's handovers</p></div><button className="text-btn" onClick={() => navigate('operatorBookings')}>See all <ArrowRight size={14} /></button></div><button className="operator-booking-highlight" onClick={() => { setSelectedBooking(bookings[0]); navigate('operatorBookingDetail'); }}><div className="attention-label"><span className="orange-dot" /> NEXT HANDOVER <span>Today · 9:00 AM</span></div><div className="operator-highlight-main"><div className="operator-booking-avatar">PS</div><div><h3>Priya Shah</h3><p>Suzuki Access 125 · {bookings[0].id}</p></div><ChevronRight size={19} /></div><div className="attention-footer"><span><ShieldCheck size={14} /> KYC verified</span><span><WalletCards size={14} /> Paid</span><strong>Verify token</strong></div></button><button className="alert-banner" onClick={() => navigate('alerts')}><div className="alert-icon"><ShieldAlert size={18} /></div><div><strong>1 SOS alert needs attention</strong><span>Aarav Mehta · Honda Activa 6G · just now</span></div><ChevronRight size={17} /></button></div>;
+    return <div className="screen scroll-screen"><AppHeader title="Good morning, Raj" subtitle="Abu Hill Rentals · Mount Abu" action={<div className="header-actions"><button className="icon-btn notification" onClick={openNotifications}><Bell size={19} />{!notificationsRead && <span />}</button><button className="icon-btn" onClick={() => setModal('logout')}><MoreHorizontal size={20} /></button></div>} /><div className="operator-status"><span className="pulse-dot" /> Operator account active <ChevronRight size={15} /></div><div className="metric-grid"><MetricTile label="Vehicles" value="7" trend="6 active" icon={Bike} /><MetricTile label="Active rentals" value="1" trend="Live now" icon={Navigation} blue /><MetricTile label="Upcoming" value="4" trend="This week" icon={CalendarDays} orange /><MetricTile label="Avg. rating" value="4.8" trend="76 reviews" icon={Star} /></div><div className="section-head"><div><h2>Quick actions</h2><p>Keep your fleet moving</p></div></div><div className="quick-actions"><QuickAction icon={Plus} label="Add vehicle" onClick={() => navigate('vehicleForm')} /><QuickAction icon={ReceiptText} label="Bookings" onClick={() => navigate('operatorBookings')} /><QuickAction icon={Navigation} label="Live rentals" onClick={() => navigate('activeRentals')} /><QuickAction icon={MessageCircle} label="Reviews" onClick={() => navigate('reviews')} /></div><div className="section-head"><div><h2>Needs your attention</h2><p>Stay on top of today's handovers</p></div><button className="text-btn" onClick={() => navigate('operatorBookings')}>See all <ArrowRight size={14} /></button></div><button className="operator-booking-highlight" onClick={() => { setSelectedBooking(bookings[0]); navigate('operatorBookingDetail'); }}><div className="attention-label"><span className="orange-dot" /> NEXT HANDOVER <span>Today · 9:00 AM</span></div><div className="operator-highlight-main"><div className="operator-booking-avatar">PS</div><div><h3>Priya Shah</h3><p>Suzuki Access 125 · {bookings[0].id}</p></div><ChevronRight size={19} /></div><div className="attention-footer"><span><ShieldCheck size={14} /> KYC verified</span><span><WalletCards size={14} /> Paid</span><strong>Verify token</strong></div></button><button className="alert-banner" onClick={() => navigate('alerts')}><div className="alert-icon"><ShieldAlert size={18} /></div><div><strong>1 SOS alert needs attention</strong><span>Aarav Mehta · Honda Activa 6G · just now</span></div><ChevronRight size={17} /></button></div>;
   }
 
   function OperatorBookings() {
@@ -543,21 +680,32 @@ function App() {
 
   function OperatorBookingDetail() {
     const isActiveBooking = selectedBooking.status === 'ACTIVE';
-    return <div className="screen scroll-screen detail-screen"><DetailHeader title="Booking review" onBack={() => navigate('operatorBookings')} /><div className="operator-detail-header"><div className="big-avatar">PS</div><div><span className="booking-id">{selectedBooking.id}</span><h1>Priya Shah</h1><p>+91 98••• 43210</p></div><StatusBadge status={isActiveBooking ? 'Active' : 'Confirmed'} /></div><div className="operator-detail-body"><section className="booking-info-card"><InfoLine icon={Bike} label="Vehicle" value={selectedBooking.vehicleName} /><InfoLine icon={CalendarDays} label="Rental time" value={`${selectedBooking.start} – ${selectedBooking.end}`} /><InfoLine icon={WalletCards} label="Payment" value="Paid · mock payment" green /><InfoLine icon={FileCheck2} label="KYC status" value="Verified · masked ID •••• 6218" green /></section><div className="token-operator-card"><div><span>BOOKING TOKEN</span><strong>{selectedBooking.token}</strong><small>Ask traveler to show this token or QR</small></div><FakeQR token={selectedBooking.token} small /></div><div className="operator-note"><ShieldCheck size={17} /><span>Both vehicle documents are verified. Check original driving licence at pickup.</span></div></div>{!isActiveBooking ? <div className="sticky-cta"><button className="secondary-btn" onClick={() => notify('Booking rejected · traveler notified')}>Reject</button><button className="primary-btn" onClick={() => navigate('handover')}>Start handover <ArrowRight size={17} /></button></div> : <div className="sticky-cta"><button className="primary-btn full-btn" onClick={() => setModal('end')}>End rental <PackageCheck size={16} /></button></div>}</div>;
+    const isClosedBooking = ['COMPLETED', 'RETURNED'].includes(selectedBooking.status);
+    const closedVehicleStatus = lastClosedRental?.bookingId === selectedBooking.id ? lastClosedRental.vehicleStatus : vehicles.find((vehicle) => vehicle.id === selectedBooking.vehicleId)?.status;
+    return <div className="screen scroll-screen detail-screen"><DetailHeader title="Booking review" onBack={() => navigate('operatorBookings')} /><div className="operator-detail-header"><div className="big-avatar">PS</div><div><span className="booking-id">{selectedBooking.id}</span><h1>Priya Shah</h1><p>+91 98••• 43210</p></div><StatusBadge status={isActiveBooking ? 'Active' : isClosedBooking ? 'Completed' : 'Confirmed'} /></div><div className="operator-detail-body"><section className="booking-info-card"><InfoLine icon={Bike} label="Vehicle" value={selectedBooking.vehicleName} /><InfoLine icon={CalendarDays} label="Rental time" value={`${selectedBooking.start} – ${selectedBooking.end}`} /><InfoLine icon={WalletCards} label="Payment" value="Paid · mock payment" green /><InfoLine icon={FileCheck2} label="KYC status" value="Verified · masked ID •••• 6218" green /></section><div className="token-operator-card"><div><span>BOOKING TOKEN</span><strong>{selectedBooking.token}</strong><small>{isClosedBooking ? 'Return token verified' : 'Ask traveler to show this token or QR'}</small></div><FakeQR token={selectedBooking.token} small /></div><div className="operator-note"><ShieldCheck size={17} /><span>{isClosedBooking ? `Rental closed · vehicle ${closedVehicleStatus === 'PENDING_INSPECTION' ? 'sent for inspection' : 'marked available'}.` : 'Both vehicle documents are verified. Check original driving licence at pickup.'}</span></div>{isClosedBooking && <div className="closure-feedback"><Star size={17} fill={colors.orange} color={colors.orange} /><div><strong>Feedback requested</strong><span>The traveler can now review this ride.</span></div><CheckCircle2 size={16} /></div>}</div>{!isActiveBooking && !isClosedBooking ? <div className="sticky-cta"><button className="secondary-btn" onClick={() => notify('Booking rejected · traveler notified')}>Reject</button><button className="primary-btn" onClick={() => navigate('handover')}>Start handover <ArrowRight size={17} /></button></div> : isActiveBooking ? <div className="sticky-cta"><button className="primary-btn full-btn" onClick={() => setModal('end')}>End rental <PackageCheck size={16} /></button></div> : null}</div>;
   }
 
   function HandoverScreen() {
-    const [token, setToken] = useState('');
-    const [tokenError, setTokenError] = useState(false);
     const validate = () => {
-      if (token.replace(/\s/g, '').toUpperCase() !== selectedBooking.token.replace(/\s/g, '').toUpperCase()) {
-        setTokenError(true);
+      const normalizedToken = handoverToken.replace(/\s/g, '').toUpperCase();
+      if (normalizedToken === 'EXPIRED') {
+        setHandoverTokenState('expired');
         return;
       }
-      setTokenError(false);
+      if (normalizedToken === 'USED' || normalizedToken === 'ALREADY-USED') {
+        setHandoverTokenState('already-used');
+        return;
+      }
+      if (normalizedToken !== selectedBooking.token.replace(/\s/g, '').toUpperCase()) {
+        setHandoverTokenState('invalid');
+        return;
+      }
+      setHandoverTokenState('valid');
       setModal('start');
     };
-    return <div className="screen scroll-screen detail-screen"><DetailHeader title="Token handover" onBack={() => navigate('operatorBookingDetail')} /><div className="handover-hero"><div className="scan-orbit"><QrCode size={31} /></div><h1>Verify before pickup</h1><p>Ask the traveler to show their booking QR or token.</p></div><button className="scanner-box" onClick={() => { setToken(selectedBooking.token); notify('Demo scanner filled the token'); }}><div className="scan-corners"><i /><i /><i /><i /></div><Camera size={23} /><strong>Scan booking QR</strong><span>Camera access is used only for this handover</span></button><div className="or-divider"><span>or enter manually</span></div><div className="manual-token"><label>Booking token</label><div className={tokenError ? 'token-input error' : 'token-input'}><KeyRound size={18} /><input value={token} onChange={(e) => { setToken(e.target.value.toUpperCase()); setTokenError(false); }} placeholder="e.g. RS-7K4M2" /><button onClick={() => setToken(selectedBooking.token)}><PasteIcon /></button></div>{tokenError && <span className="field-error"><CircleAlert size={14} /> Token invalid or already used. Try again.</span>}</div><div className="handover-checks"><div><CheckCircle2 size={17} /> Booking is confirmed</div><div><CheckCircle2 size={17} /> Payment received</div><div><CheckCircle2 size={17} /> KYC is verified</div></div><button className="primary-btn full-btn" onClick={validate}>Validate token <ArrowRight size={17} /></button></div>;
+    const tokenError = handoverTokenState !== 'idle' && handoverTokenState !== 'valid';
+    const tokenErrorMessage = handoverTokenState === 'expired' ? 'Token expired. Ask the traveler to refresh the booking.' : handoverTokenState === 'already-used' ? 'Token already used. Do not start a duplicate handover.' : 'Token invalid or already used. Try again.';
+    return <div className="screen scroll-screen detail-screen"><DetailHeader title="Token handover" onBack={() => navigate('operatorBookingDetail')} /><div className="handover-hero"><div className="scan-orbit"><QrCode size={31} /></div><h1>Verify before pickup</h1><p>Ask the traveler to show their booking QR or token.</p></div><button className="scanner-box" onClick={() => { setHandoverToken(selectedBooking.token); setHandoverTokenState('idle'); notify('Demo scanner filled the token'); }}><div className="scan-corners"><i /><i /><i /><i /></div><Camera size={23} /><strong>Scan booking QR</strong><span>Camera access is used only for this handover</span></button><div className="or-divider"><span>or enter manually</span></div><div className="manual-token"><label>Booking token</label><div className={tokenError ? 'token-input error' : handoverTokenState === 'valid' ? 'token-input valid' : 'token-input'}><KeyRound size={18} /><input value={handoverToken} onChange={(e) => { setHandoverToken(e.target.value.toUpperCase()); setHandoverTokenState('idle'); }} placeholder="e.g. RS-7K4M2" /><button onClick={() => { setHandoverToken(selectedBooking.token); setHandoverTokenState('idle'); }}><PasteIcon /></button></div>{tokenError && <span className="field-error"><CircleAlert size={14} /> {tokenErrorMessage}</span>}</div><div className="handover-checks"><div><CheckCircle2 size={17} /> Booking is confirmed</div><div><CheckCircle2 size={17} /> Payment received</div><div><CheckCircle2 size={17} /> KYC is verified</div></div><div className="token-state-hint"><span>Demo checks:</span> invalid · EXPIRED · USED · valid token</div><button className="primary-btn full-btn" onClick={validate}>Validate token <ArrowRight size={17} /></button></div>;
   }
 
   function OperatorVehicles() {
@@ -569,31 +717,43 @@ function App() {
   }
 
   function OperatorActiveRentals() {
-    return <div className="screen scroll-screen"><AppHeader title="Active rentals" subtitle="1 rental live right now" action={<button className="icon-btn"><ListFilter size={19} /></button>} /><div className="operator-map"><MapCanvas markerCount={1} /><div className="map-overlay-chip"><span className="pulse-dot" /> 1 live location</div></div><div className="section-head"><div><h2>On the road</h2><p>Live location is consent-based</p></div><button className="text-btn" onClick={() => notify('Locations refreshed')}><RefreshCw size={14} /> Refresh</button></div>{activeRental ? <button className="active-rental-row" onClick={() => navigate('activeRentalDetail')}><div className="active-rental-thumb"><img src={vehiclePhoto(liveVehicle)} alt="" /><span className="pulse-dot" /></div><div><div className="row-title"><strong>Aarav Mehta</strong><StatusBadge status="Active" /></div><h3>Honda Activa 6G</h3><p><Clock3 size={13} /> Started today at 10:30 AM</p><span className="live-copy"><Navigation size={12} /> Location shared · 42 sec ago</span></div><ChevronRight size={18} /></button> : <EmptyHint icon={Navigation} title="No active rentals" text="Started rentals will appear here with consent-based location." action="View bookings" onClick={() => navigate('operatorBookings')} />}</div>;
+    const activeBooking = bookings.find((booking) => booking.status === 'ACTIVE');
+    const activeVehicle = activeBooking ? vehicles.find((vehicle) => vehicle.id === activeBooking.vehicleId) ?? vehicles[0] : liveVehicle;
+    const openActiveRental = () => {
+      if (!activeBooking) return;
+      setSelectedBooking(activeBooking);
+      setSelectedVehicle(activeVehicle);
+      setOperatorActiveVehicleId(activeBooking.vehicleId);
+      navigate('activeRentalDetail');
+    };
+    return <div className="screen scroll-screen"><AppHeader title="Active rentals" subtitle="1 rental live right now" action={<button className="icon-btn"><ListFilter size={19} /></button>} /><div className="operator-map"><MapCanvas markerCount={1} /><div className="map-overlay-chip"><span className="pulse-dot" /> {activeBooking ? '1 live location' : 'No live locations'}</div></div><div className="section-head"><div><h2>On the road</h2><p>Live location is consent-based</p></div><button className="text-btn" onClick={() => notify('Locations refreshed')}><RefreshCw size={14} /> Refresh</button></div>{activeRental && activeBooking ? <button className="active-rental-row" onClick={openActiveRental}><div className="active-rental-thumb"><img src={vehiclePhoto(activeVehicle)} alt="" /><span className="pulse-dot" /></div><div><div className="row-title"><strong>Aarav Mehta</strong><StatusBadge status="Active" /></div><h3>{activeVehicle.name}</h3><p><Clock3 size={13} /> Started today at 10:30 AM</p><span className="live-copy"><Navigation size={12} /> Location shared · 42 sec ago</span></div><ChevronRight size={18} /></button> : lastClosedRental ? <div className="closure-card"><div className="closure-card-head"><div className="closure-icon"><CheckCircle2 size={20} /></div><div><span className="eyebrow">RETURN COMPLETE</span><h3>Rental closed</h3><p>{lastClosedRental.vehicleName} · {lastClosedRental.bookingId}</p></div><StatusBadge status={lastClosedRental.vehicleStatus === 'AVAILABLE' ? 'Available' : 'Pending inspection'} /></div><div className="closure-feedback"><Star size={17} fill={colors.orange} color={colors.orange} /><div><strong>Feedback requested</strong><span>The traveler can now review this ride.</span></div><CheckCircle2 size={16} /></div></div> : <EmptyHint icon={Navigation} title="No active rentals" text="Started rentals will appear here with consent-based location." action="View bookings" onClick={() => navigate('operatorBookings')} />}</div>;
   }
 
   function OperatorActiveRentalDetail() {
-    return <div className="screen scroll-screen detail-screen"><DetailHeader title="Live rental" onBack={() => navigate('activeRentals')} /><div className="live-status-head"><span className="pulse-dot" /> LIVE LOCATION <span>42 sec ago</span></div><MapCard consent onConsent={() => notify('Location refreshed')} onLocate={() => notify('Active rental location centered')} /><div className="detail-content"><div className="renter-card"><div className="big-avatar">AM</div><div><h2>Aarav Mehta</h2><p><Phone size={13} /> +91 98••• 43210</p></div><button className="icon-btn light"><Phone size={17} /></button></div><section className="booking-info-card"><InfoLine icon={Bike} label="Vehicle" value="Honda Activa 6G · RJ 38 AB 2048" /><InfoLine icon={KeyRound} label="Token" value="RS-7392" /><InfoLine icon={Clock3} label="Started" value="Today · 10:30 AM" /><InfoLine icon={ShieldAlert} label="SOS status" value={sosRaised ? 'Raised · responding' : 'No active alert'} green={!sosRaised} /></section><button className="sos-mini-banner" onClick={() => navigate('alerts')}><ShieldAlert size={17} /><span><strong>{sosRaised ? 'SOS alert raised' : 'Safety alerts'}</strong><small>{sosRaised ? 'Aarav needs support now' : 'Monitor alerts for this rental'}</small></span><ChevronRight size={17} /></button></div><div className="sticky-cta"><button className="primary-btn full-btn" onClick={() => setModal('end')}>End rental & inspect <PackageCheck size={17} /></button></div></div>;
+    const rentalVehicle = vehicles.find((vehicle) => vehicle.id === selectedBooking.vehicleId) ?? liveVehicle;
+    return <div className="screen scroll-screen detail-screen"><DetailHeader title="Live rental" onBack={() => navigate('activeRentals')} /><div className="live-status-head"><span className="pulse-dot" /> LIVE LOCATION <span>42 sec ago</span></div><MapCard consent onConsent={() => notify('Location refreshed')} onLocate={() => notify('Active rental location centered')} /><div className="detail-content"><div className="renter-card"><div className="big-avatar">AM</div><div><h2>Aarav Mehta</h2><p><Phone size={13} /> +91 98••• 43210</p></div><button className="icon-btn light"><Phone size={17} /></button></div><section className="booking-info-card"><InfoLine icon={Bike} label="Vehicle" value={`${rentalVehicle.name} · RJ 38 AB 2048`} /><InfoLine icon={KeyRound} label="Token" value={selectedBooking.token} /><InfoLine icon={Clock3} label="Started" value={selectedBooking.start} /><InfoLine icon={ShieldAlert} label="SOS status" value={sosRaised ? 'Raised · responding' : 'No active alert'} green={!sosRaised} /></section><button className="sos-mini-banner" onClick={() => navigate('alerts')}><ShieldAlert size={17} /><span><strong>{sosRaised ? 'SOS alert raised' : 'Safety alerts'}</strong><small>{sosRaised ? 'Aarav needs support now' : 'Monitor alerts for this rental'}</small></span><ChevronRight size={17} /></button></div><div className="sticky-cta"><button className="primary-btn full-btn" onClick={() => setModal('end')}>End rental & inspect <PackageCheck size={17} /></button></div></div>;
   }
 
   function ReturnScreen() {
-    const [returnToken, setReturnToken] = useState('');
-    const [returnVerified, setReturnVerified] = useState(false);
-    const [returnError, setReturnError] = useState(false);
+    const expectedReturnToken = selectedBooking.token === '—' ? 'RS-7392' : selectedBooking.token;
     const verifyReturnToken = () => {
-      if (returnToken.replace(/\s/g, '').toUpperCase() !== 'RS-7392') {
+      if (returnToken.replace(/\s/g, '').toUpperCase() !== expectedReturnToken.replace(/\s/g, '').toUpperCase()) {
         setReturnError(true);
+        setReturnVerified(false);
         return;
       }
       setReturnError(false);
       setReturnVerified(true);
       notify('Return token verified');
     };
-    return <div className="screen scroll-screen detail-screen"><DetailHeader title="Close rental" onBack={() => navigate('activeRentalDetail')} /><div className="return-intro"><div className="return-icon"><PackageCheck size={25} /></div><div><h1>Complete the return</h1><p>Inspect the vehicle, add notes, then close this rental.</p></div></div><div className={`return-token ${returnError ? 'has-error' : ''}`}><div><span>BOOKING TOKEN</span><div className="return-token-entry"><KeyRound size={14} /><input value={returnToken} onChange={(e) => { setReturnToken(e.target.value.toUpperCase()); setReturnError(false); }} placeholder="RS-7392" /></div></div><button onClick={() => { setReturnToken('RS-7392'); setReturnVerified(true); notify('Demo scanner filled the token'); }}><Camera size={15} /> Scan QR</button><button className={returnVerified ? 'verified-return' : ''} onClick={verifyReturnToken}>{returnVerified ? <CheckCircle2 size={15} /> : <Check size={15} />} {returnVerified ? 'Verified' : 'Verify'}</button></div>{returnError && <span className="field-error return-error"><CircleAlert size={14} /> Token invalid or already used.</span>}<div className="form-content"><label className="field-label">Return notes<textarea value={returnNotes} onChange={(e) => setReturnNotes(e.target.value)} placeholder="Any scratches, fuel level or other notes…" /></label><h3 className="form-subtitle">Vehicle condition</h3><div className="condition-options"><button className="active"><CheckCircle2 size={16} /> Good condition</button><button><CircleAlert size={16} /> Needs inspection</button><button><WrenchIcon /> Maintenance needed</button></div><UploadField label="Add return photos (optional)" /></div><div className="sticky-cta"><button className="primary-btn full-btn" onClick={() => returnVerified ? setModal('return') : notify('Verify the return token first')}>Close rental <CheckCircle2 size={17} /></button></div></div>;
+    const chooseReturnCondition = (condition: ReturnCondition) => {
+      setReturnCondition(condition);
+    };
+    return <div className="screen scroll-screen detail-screen"><DetailHeader title="Close rental" onBack={() => navigate('activeRentalDetail')} /><div className="return-intro"><div className="return-icon"><PackageCheck size={25} /></div><div><h1>Complete the return</h1><p>Inspect the vehicle, add notes, then close this rental.</p></div></div><div className={`return-token ${returnError ? 'has-error' : ''}`}><div><span>BOOKING TOKEN</span><div className="return-token-entry"><KeyRound size={14} /><input value={returnToken} onChange={(e) => { setReturnToken(e.target.value.toUpperCase()); setReturnVerified(false); setReturnError(false); }} placeholder={expectedReturnToken} /></div></div><button onClick={() => { setReturnToken(expectedReturnToken); setReturnVerified(false); setReturnError(false); notify('Demo scanner filled the token'); }}><Camera size={15} /> Scan QR</button><button className={returnVerified ? 'verified-return' : ''} onClick={verifyReturnToken}>{returnVerified ? <CheckCircle2 size={15} /> : <Check size={15} />} {returnVerified ? 'Verified' : 'Verify'}</button></div>{returnError && <span className="field-error return-error"><CircleAlert size={14} /> Token invalid or already used.</span>}<div className="form-content"><label className="field-label">Return notes<textarea value={returnNotes} onChange={(e) => setReturnNotes(e.target.value)} placeholder="Any scratches, fuel level or other notes…" /></label><h3 className="form-subtitle">Vehicle condition</h3><div className="condition-options"><button className={returnCondition === 'GOOD' ? 'active' : ''} onClick={() => chooseReturnCondition('GOOD')}><CheckCircle2 size={16} /> Good condition</button><button className={returnCondition === 'INSPECTION' ? 'active' : ''} onClick={() => chooseReturnCondition('INSPECTION')}><CircleAlert size={16} /> Needs inspection</button><button className={returnCondition === 'MAINTENANCE' ? 'active' : ''} onClick={() => chooseReturnCondition('MAINTENANCE')}><WrenchIcon /> Maintenance needed</button></div><UploadField label="Add return photos (optional)" /></div><div className="sticky-cta"><button className="primary-btn full-btn" disabled={!returnVerified} onClick={() => { if (returnVerified) setModal('return'); }}>Close rental <CheckCircle2 size={17} /></button></div></div>;
   }
 
   function OperatorAlerts() {
-    return <div className="screen scroll-screen"><AppHeader title="SOS alerts" subtitle="Keep every rider safe" action={<button className="icon-btn" onClick={openNotifications}><Bell size={19} /></button>} /><div className="sos-summary"><div className="sos-summary-icon"><ShieldAlert size={21} /></div><div><strong>{alerts.filter((a) => a.status === 'RAISED').length} open alert</strong><span>Respond quickly to keep riders safe</span></div></div><div className="alert-list">{alerts.map((alert) => <div key={alert.id} className={`sos-alert-card ${alert.status === 'RAISED' ? 'urgent' : ''}`}><div className="alert-card-top"><span className="alert-id">{alert.id}</span><SOSBadge status={alert.status} /><MoreHorizontal size={17} /></div><div className="alert-person"><div className="big-avatar red-avatar">{alert.traveler.split(' ').map((n) => n[0]).join('')}</div><div><h3>{alert.traveler}</h3><p>{alert.vehicle} · {alert.time}</p></div></div><div className="alert-location"><MapPin size={15} /><span>{alert.location}</span><button onClick={() => notify('Location preview centered on Mount Abu')}>View map</button></div>{alert.status === 'RAISED' && <div className="alert-actions"><button className="secondary-btn" onClick={() => { setAlerts((all) => all.map((a) => a.id === alert.id ? { ...a, status: 'ACKNOWLEDGED' } : a)); notify('Alert acknowledged'); }}>Acknowledge</button><button className="primary-btn" onClick={() => { setAlerts((all) => all.map((a) => a.id === alert.id ? { ...a, status: 'RESOLVED' } : a)); notify('Alert marked resolved'); }}>Resolve</button></div>}</div>)}</div></div>;
+    return <div className="screen scroll-screen"><AppHeader title="SOS alerts" subtitle="Keep every rider safe" action={<button className="icon-btn notification" onClick={openNotifications}><Bell size={19} />{!notificationsRead && <span />}</button>} /><div className="sos-summary"><div className="sos-summary-icon"><ShieldAlert size={21} /></div><div><strong>{alerts.filter((a) => a.status === 'RAISED').length} open alert</strong><span>Respond quickly to keep riders safe</span></div></div><div className="alert-list">{alerts.map((alert) => <div key={alert.id} className={`sos-alert-card ${alert.status === 'RAISED' ? 'urgent' : ''}`}><button className="alert-card-click" onClick={() => openSosDetail(alert)}><div className="alert-card-top"><span className="alert-id">{alert.id}</span><SOSBadge status={alert.status} /><MoreHorizontal size={17} /></div><div className="alert-person"><div className="big-avatar red-avatar">{alert.traveler.split(' ').map((n) => n[0]).join('')}</div><div><h3>{alert.traveler}</h3><p>{alert.vehicle} · {alert.time}</p></div></div><div className="alert-location"><MapPin size={15} /><span>{alert.location}</span><span className="view-map-link">View map <ChevronRight size={14} /></span></div></button>{alert.status === 'RAISED' && <div className="alert-actions"><button className="secondary-btn" onClick={() => updateAlertStatus(alert.id, 'ACKNOWLEDGED')}>Acknowledge</button><button className="primary-btn" onClick={() => updateAlertStatus(alert.id, 'RESOLVED')}>Resolve</button></div>}</div>)}</div></div>;
   }
 
   function ReviewsScreen() {
@@ -608,19 +768,48 @@ function App() {
       { key: 'metrics' as Screen, label: 'Metrics', icon: Gauge },
     ];
     const isHome = ['approvals', 'adminBookings', 'adminSOS', 'metrics'].includes(screen);
-    return <>{screen === 'approvals' && <AdminApprovals />}{screen === 'adminBookings' && <AdminBookings />}{screen === 'adminSOS' && <AdminSOS />}{screen === 'metrics' && <AdminMetrics />}{isHome && <BottomTabs tabs={tabs} active={screen} onChange={navigate} />}</>;
+    return <>{screen === 'approvals' && <AdminApprovals />}{screen === 'adminBookings' && <AdminBookings />}{screen === 'adminBookingDetail' && <AdminBookingDetail />}{screen === 'adminKycReview' && <AdminKycReview />}{screen === 'adminKycDetail' && <AdminKycDetail />}{screen === 'adminSOS' && <AdminSOS />}{screen === 'sosDetail' && <SosDetail />}{screen === 'metrics' && <AdminMetrics />}{isHome && <BottomTabs tabs={tabs} active={screen} onChange={navigate} />}</>;
   }
 
   function AdminApprovals() {
-    return <div className="screen scroll-screen"><AppHeader title="Good morning, Admin" subtitle="RideSathi control centre" action={<button className="icon-btn" onClick={() => setModal('logout')}><MoreHorizontal size={20} /></button>} /><div className="admin-banner"><div className="admin-shield"><ShieldCheck size={21} /></div><div><strong>Network health is good</strong><span>Mount Abu pilot · Last synced just now</span></div><RefreshCw size={16} /></div><div className="approval-counts"><div><strong>3</strong><span>Pending actions</span></div><div><strong>12</strong><span>Approved operators</span></div><div><strong>48</strong><span>Active vehicles</span></div></div><div className="section-head"><div><h2>Review queue</h2><p>Approve partners and vehicles</p></div><button className="text-btn" onClick={() => notify('Queue refreshed')}><RefreshCw size={14} /></button></div><div className="admin-tabs"><button className={adminTab === 'operators' ? 'active' : ''} onClick={() => setAdminTab('operators')}>Operators <span>2</span></button><button className={adminTab === 'vehicles' ? 'active' : ''} onClick={() => setAdminTab('vehicles')}>Vehicles <span>1</span></button></div>{adminTab === 'operators' ? <div className="approval-list"><ApprovalCard initials="SR" title="Sharma Rides" subtitle="Nakki Lake Road · Submitted 2h ago" type="Operator" approve={() => approve('Sharma Rides')} reject={() => reject('Sharma Rides')} /><ApprovalCard initials="RD" title="Rajasthan Drive Co." subtitle="Delwara Road · Submitted yesterday" type="Operator" approve={() => approve('Rajasthan Drive Co.')} reject={() => reject('Rajasthan Drive Co.')} /></div> : <div className="approval-list"><ApprovalCard initials="HD" title="Honda Dio" subtitle="Mount Abu Riders · ₹479/day" type="Vehicle · Documents uploaded" approve={() => approve('Honda Dio')} reject={() => reject('Honda Dio')} /></div>}<button className="alert-banner" onClick={() => navigate('adminSOS')}><div className="alert-icon"><ShieldAlert size={18} /></div><div><strong>1 SOS alert is open</strong><span>Review the active safety incident</span></div><ChevronRight size={17} /></button></div>;
+    return <div className="screen scroll-screen"><AppHeader title="Good morning, Admin" subtitle="RideSathi control centre" action={<div className="header-actions"><button className="icon-btn notification" onClick={openNotifications}><Bell size={19} />{!notificationsRead && <span />}</button><button className="icon-btn" onClick={() => setModal('logout')}><MoreHorizontal size={20} /></button></div>} /><div className="admin-banner"><div className="admin-shield"><ShieldCheck size={21} /></div><div><strong>Network health is good</strong><span>Mount Abu pilot · Last synced just now</span></div><RefreshCw size={16} /></div><div className="approval-counts"><div><strong>3</strong><span>Pending actions</span></div><div><strong>12</strong><span>Approved operators</span></div><div><strong>48</strong><span>Active vehicles</span></div></div><div className="section-head"><div><h2>Review queue</h2><p>Approve partners and vehicles</p></div><div className="admin-queue-actions"><button className="text-btn" onClick={() => navigate('adminKycReview')}><FileCheck2 size={14} /> Review KYC</button><button className="text-btn" onClick={() => notify('Queue refreshed')}><RefreshCw size={14} /></button></div></div><div className="admin-tabs"><button className={adminTab === 'operators' ? 'active' : ''} onClick={() => setAdminTab('operators')}>Operators <span>2</span></button><button className={adminTab === 'vehicles' ? 'active' : ''} onClick={() => setAdminTab('vehicles')}>Vehicles <span>1</span></button></div>{adminTab === 'operators' ? <div className="approval-list"><ApprovalCard initials="SR" title="Sharma Rides" subtitle="Nakki Lake Road · Submitted 2h ago" type="Operator" approve={() => approve('Sharma Rides')} reject={() => reject('Sharma Rides')} /><ApprovalCard initials="RD" title="Rajasthan Drive Co." subtitle="Delwara Road · Submitted yesterday" type="Operator" approve={() => approve('Rajasthan Drive Co.')} reject={() => reject('Rajasthan Drive Co.')} /></div> : <div className="approval-list"><ApprovalCard initials="HD" title="Honda Dio" subtitle="Mount Abu Riders · ₹479/day" type="Vehicle · Documents uploaded" approve={() => approve('Honda Dio')} reject={() => reject('Honda Dio')} /></div>}<button className="alert-banner" onClick={() => navigate('adminSOS')}><div className="alert-icon"><ShieldAlert size={18} /></div><div><strong>1 SOS alert is open</strong><span>Review the active safety incident</span></div><ChevronRight size={17} /></button></div>;
+  }
+
+  function AdminKycReview() {
+    const pendingCount = kycReviews.filter((record) => record.status === 'PENDING').length;
+    return <div className="screen scroll-screen detail-screen"><DetailHeader title="KYC review" step={`${pendingCount} pending`} onBack={() => navigate('approvals')} /><div className="kyc-review-intro"><div className="secure-icon"><ShieldCheck size={20} /></div><div><h1>Verify traveler documents</h1><p>Review masked IDs and consent before handover.</p></div></div><div className="kyc-review-summary"><div><strong>{pendingCount}</strong><span>Pending review</span></div><div><strong>{kycReviews.filter((record) => record.status === 'VERIFIED').length}</strong><span>Verified</span></div><div><strong>{kycReviews.filter((record) => record.status === 'REJECTED').length}</strong><span>Rejected</span></div></div><div className="section-head"><div><h2>Traveler queue</h2><p>Documents are shown with masked IDs only.</p></div><span className="eyebrow">{kycReviews.length} records</span></div><div className="kyc-review-list">{kycReviews.map((record) => <button key={record.id} className="kyc-review-card" onClick={() => { setSelectedKyc(record); navigate('adminKycDetail'); }}><div className="kyc-card-head"><div className="big-avatar">{record.traveler.split(' ').map((name) => name[0]).join('')}</div><div><span className="booking-id">{record.id} · {record.bookingId}</span><h3>{record.traveler}</h3><p>{record.idType} · Submitted {record.submitted}</p></div><KycStatusBadge status={record.status} /></div><div className="kyc-card-meta"><span><FileCheck2 size={14} /> {record.maskedId}</span><span><ShieldCheck size={14} /> Consent captured</span><ChevronRight size={17} /></div></button>)}</div></div>;
+  }
+
+  function AdminKycDetail() {
+    const updateKycStatus = (status: KycReview['status']) => {
+      setKycReviews((records) => records.map((record) => record.id === selectedKyc.id ? { ...record, status } : record));
+      setSelectedKyc((record) => ({ ...record, status }));
+      notify(status === 'VERIFIED' ? 'KYC verified · traveler notified' : 'KYC rejected · traveler notified');
+      navigate('adminKycReview');
+    };
+    return <div className="screen scroll-screen detail-screen"><DetailHeader title="KYC record" step={selectedKyc.id} onBack={() => navigate('adminKycReview')} /><div className="kyc-detail-hero"><div className="big-avatar">{selectedKyc.traveler.split(' ').map((name) => name[0]).join('')}</div><div><span className="booking-id">{selectedKyc.bookingId}</span><h1>{selectedKyc.traveler}</h1><p>Submitted {selectedKyc.submitted}</p></div><KycStatusBadge status={selectedKyc.status} /></div><div className="kyc-detail-content"><section className="booking-info-card"><InfoLine icon={FileText} label="Document type" value={selectedKyc.idType} /><InfoLine icon={LockKeyhole} label="Masked ID" value={selectedKyc.maskedId} green /><InfoLine icon={ShieldCheck} label="Consent" value={selectedKyc.consent} green /><InfoLine icon={CalendarDays} label="Booking" value={selectedKyc.bookingId} /></section><section className="document-preview-section"><div className="section-head"><div><h2>Uploaded documents</h2><p>Preview placeholders keep identity data protected.</p></div><LockKeyhole size={17} color={colors.green} /></div><div className="document-thumbnails"><div><FileText size={25} /><span>Front side</span><small>{selectedKyc.maskedId}</small></div><div><FileCheck2 size={25} /><span>Back side</span><small>Uploaded securely</small></div></div></section><div className="verification-note"><ShieldCheck size={18} /><div><strong>Privacy-safe review</strong><span>Only masked identifiers are displayed in the Admin workspace.</span></div></div></div>{selectedKyc.status === 'PENDING' ? <div className="sticky-cta"><button className="secondary-btn" onClick={() => updateKycStatus('REJECTED')}>Reject</button><button className="primary-btn" onClick={() => updateKycStatus('VERIFIED')}>Verify <Check size={16} /></button></div> : <div className="sticky-cta"><button className="primary-btn full-btn" onClick={() => navigate('adminKycReview')}>Back to KYC queue <ArrowRight size={16} /></button></div>}</div>;
   }
 
   function AdminBookings() {
-    return <div className="screen scroll-screen"><AppHeader title="All bookings" subtitle="Live network activity" action={<button className="icon-btn"><ListFilter size={19} /></button>} /><div className="admin-booking-metrics"><MetricTile label="Today" value="18" trend="+12% vs yesterday" icon={CalendarDays} /><MetricTile label="Active now" value="6" trend="Across Mount Abu" icon={Navigation} blue /></div><div className="segmented"><button className="active">All <span>24</span></button><button>Active</button><button>Completed</button></div><div className="booking-stack admin-booking-stack">{bookings.map((booking) => <BookingCard key={booking.id} booking={booking} onClick={() => notify(`${booking.id} · ${booking.status}`)} />)}</div></div>;
+    return <div className="screen scroll-screen"><AppHeader title="All bookings" subtitle="Live network activity" action={<button className="icon-btn"><ListFilter size={19} /></button>} /><div className="admin-booking-metrics"><MetricTile label="Today" value="18" trend="+12% vs yesterday" icon={CalendarDays} /><MetricTile label="Active now" value="6" trend="Across Mount Abu" icon={Navigation} blue /></div><div className="segmented"><button className="active">All <span>24</span></button><button>Active</button><button>Completed</button></div><div className="booking-stack admin-booking-stack">{bookings.map((booking) => <BookingCard key={booking.id} booking={booking} onClick={() => { setSelectedBooking(booking); const vehicle = vehicles.find((item) => item.id === booking.vehicleId); if (vehicle) setSelectedVehicle(vehicle); navigate('adminBookingDetail'); }} />)}</div></div>;
+  }
+
+  function AdminBookingDetail() {
+    const commission = Math.round(selectedBooking.amount * 0.1);
+    const traveler = selectedBooking.id === 'RS-2048' ? 'Priya Shah' : selectedBooking.id === 'RS-1932' ? 'Aarav Mehta' : 'Kabir Joshi';
+    const vehicle = vehicles.find((item) => item.id === selectedBooking.vehicleId) ?? selectedVehicle;
+    const hasSos = alerts.some((alert) => alert.vehicle === selectedBooking.vehicleName && alert.status !== 'RESOLVED');
+    return <div className="screen scroll-screen detail-screen"><DetailHeader title="Booking detail" step={selectedBooking.id} onBack={() => navigate('adminBookings')} /><div className="admin-booking-detail-hero"><div className="booking-card-top"><span className="booking-id">{selectedBooking.id}</span><StatusBadge status={selectedBooking.status === 'ACTIVE' ? 'Active' : selectedBooking.status === 'COMPLETED' ? 'Completed' : selectedBooking.status === 'CONFIRMED' ? 'Confirmed' : selectedBooking.status} /></div><img src={vehiclePhoto(vehicle)} alt="" /><h1>{selectedBooking.vehicleName}</h1><p>{selectedBooking.operator} · Mount Abu</p></div><div className="detail-content"><section className="booking-info-card"><InfoLine icon={CircleUserRound} label="Traveler" value={traveler} /><InfoLine icon={Bike} label="Vehicle" value={selectedBooking.vehicleName} /><InfoLine icon={Users} label="Operator" value={selectedBooking.operator} /><InfoLine icon={CalendarDays} label="Rental time" value={`${selectedBooking.start} – ${selectedBooking.end}`} /></section><section className="booking-info-card"><InfoLine icon={WalletCards} label="Amount paid" value={formatCurrency(selectedBooking.amount)} green /><InfoLine icon={IndianRupee} label="RideSathi commission" value={`${formatCurrency(commission)} · 10%`} /><InfoLine icon={CreditCard} label="Payment" value={selectedBooking.payment === 'SUCCESS' ? 'Paid · mock payment' : selectedBooking.payment} green /><InfoLine icon={FileCheck2} label="KYC" value={selectedBooking.kyc === 'VERIFIED' ? 'Verified · masked ID' : selectedBooking.kyc} green /></section><div className="token-inline"><div><span>Token / QR reference</span><strong>{selectedBooking.token}</strong><small>Handover reference · never expose full IDs</small></div><FakeQR token={selectedBooking.token} small /></div><section className="timeline-section"><h3>Booking timeline</h3><Timeline status={selectedBooking.status} /></section><div className={`admin-sos-link ${hasSos ? 'urgent' : ''}`}><ShieldAlert size={17} /><div><strong>{hasSos ? 'SOS linked to this rental' : 'No open SOS linked'}</strong><span>{hasSos ? 'Open the safety incident for location and response history.' : 'Safety status is clear for this booking.'}</span></div>{hasSos && <button onClick={() => { const alert = alerts.find((item) => item.vehicle === selectedBooking.vehicleName && item.status !== 'RESOLVED'); if (alert) openSosDetail(alert); }}><ChevronRight size={17} /></button>}</div></div><div className="sticky-cta"><button className="secondary-btn" onClick={() => setModal('adminActions')}>More actions <MoreHorizontal size={16} /></button><button className="primary-btn" onClick={() => notify('Booking timeline refreshed')}>Refresh <RefreshCw size={16} /></button></div></div>;
   }
 
   function AdminSOS() {
-    return <div className="screen scroll-screen"><AppHeader title="SOS alerts" subtitle="Safety response centre" action={<button className="icon-btn"><RefreshCw size={19} /></button>} /><div className="admin-sos-hero"><div className="sos-summary-icon"><ShieldAlert size={22} /></div><div><strong>1 needs attention</strong><span>Operators and support are notified immediately.</span></div></div><div className="alert-list">{alerts.map((alert) => <div key={alert.id} className={`sos-alert-card ${alert.status === 'RAISED' ? 'urgent' : ''}`}><div className="alert-card-top"><span className="alert-id">{alert.id}</span><SOSBadge status={alert.status} /><span className="admin-time">{alert.time}</span></div><div className="alert-person"><div className="big-avatar red-avatar">{alert.traveler.split(' ').map((n) => n[0]).join('')}</div><div><h3>{alert.traveler}</h3><p>{alert.vehicle}</p></div></div><div className="alert-location"><MapPin size={15} /><span>{alert.location}</span></div><button className="map-preview" onClick={() => notify('Location preview centered on Mount Abu')}><MapCanvas markerCount={1} /><span><Navigation size={14} /> Open location preview</span></button></div>)}</div></div>;
+    return <div className="screen scroll-screen"><AppHeader title="SOS alerts" subtitle="Safety response centre" action={<div className="header-actions"><button className="icon-btn notification" onClick={openNotifications}><Bell size={19} />{!notificationsRead && <span />}</button><button className="icon-btn" onClick={() => notify('SOS queue refreshed')}><RefreshCw size={19} /></button></div>} /><div className="admin-sos-hero"><div className="sos-summary-icon"><ShieldAlert size={22} /></div><div><strong>{alerts.filter((alert) => alert.status === 'RAISED').length} needs attention</strong><span>Operators and support are notified immediately.</span></div></div><div className="alert-list">{alerts.map((alert) => <div key={alert.id} className={`sos-alert-card ${alert.status === 'RAISED' ? 'urgent' : ''}`}><div className="alert-card-top"><span className="alert-id">{alert.id}</span><SOSBadge status={alert.status} /><span className="admin-time">{alert.time}</span></div><div className="alert-person"><div className="big-avatar red-avatar">{alert.traveler.split(' ').map((n) => n[0]).join('')}</div><div><h3>{alert.traveler}</h3><p>{alert.vehicle}</p></div></div><div className="alert-location"><MapPin size={15} /><span>{alert.location}</span></div><button className="map-preview" onClick={() => openSosDetail(alert)}><MapCanvas markerCount={1} /><span><Navigation size={14} /> Open SOS detail & map</span></button></div>)}</div></div>;
+  }
+
+  function SosDetail() {
+    const currentAlert = alerts.find((alert) => alert.id === selectedAlert.id) ?? selectedAlert;
+    const backScreen: Screen = role === 'admin' ? 'adminSOS' : 'alerts';
+    return <div className="screen scroll-screen detail-screen"><DetailHeader title="SOS detail" step={currentAlert.id} onBack={() => navigate(backScreen)} /><div className="sos-detail-hero"><div className="sos-summary-icon"><ShieldAlert size={24} /></div><div><span className="eyebrow">SAFETY INCIDENT</span><h1>{currentAlert.status === 'RESOLVED' ? 'Incident resolved' : 'Immediate response'}</h1><p>{currentAlert.traveler} · {currentAlert.vehicle}</p></div><SOSBadge status={currentAlert.status} /></div><div className="detail-content"><div className="sos-detail-map"><MapCanvas markerCount={1} /><div className="map-detail-chip"><MapPin size={14} /> {currentAlert.location}</div><button onClick={() => notify('Map recentered on the shared location')}><Navigation size={16} /></button></div><section className="booking-info-card"><InfoLine icon={CircleUserRound} label="Traveler" value={currentAlert.traveler} /><InfoLine icon={Bike} label="Vehicle" value={currentAlert.vehicle} /><InfoLine icon={Clock3} label="Raised" value={currentAlert.time} /><InfoLine icon={MapPin} label="Coordinates" value={currentAlert.location.split('·').pop()?.trim() ?? '24.5926, 72.7156'} /></section><div className="location-consent-card"><Navigation size={18} /><div><strong>Location consent</strong><span>{currentAlert.location.includes('Live location') || currentAlert.location.includes('Near') ? 'Traveler location is shared with the response team.' : 'Location unavailable; contact support for assistance.'}</span></div><CheckCircle2 size={17} /></div><section className="sos-history"><div className="section-head"><div><h2>Response history</h2><p>Every action is recorded.</p></div><Clock3 size={17} color={colors.green} /></div><div className="sos-history-row"><span className="history-dot raised" /><div><strong>SOS {currentAlert.status === 'RESOLVED' ? 'raised and resolved' : 'raised'}</strong><span>{currentAlert.time}</span></div></div>{currentAlert.status !== 'RAISED' && <div className="sos-history-row"><span className="history-dot acknowledged" /><div><strong>Operator acknowledged</strong><span>Response team notified</span></div></div>}{currentAlert.status === 'RESOLVED' && <div className="sos-history-row"><span className="history-dot resolved" /><div><strong>Incident resolved</strong><span>Safety team closed the alert</span></div></div>}</section><div className="sos-contact-actions"><button className="secondary-btn" onClick={() => notify('Support call simulation started')}><Phone size={16} /> Call support</button><button className="secondary-btn" onClick={() => notify('Traveler contact simulation started')}><MessageCircle size={16} /> Contact traveler</button></div></div>{currentAlert.status === 'RAISED' && <div className="sticky-cta"><button className="secondary-btn" onClick={() => updateAlertStatus(currentAlert.id, 'ACKNOWLEDGED')}>Acknowledge</button><button className="danger-btn" onClick={() => updateAlertStatus(currentAlert.id, 'RESOLVED')}>Resolve SOS</button></div>}</div>;
   }
 
   function AdminMetrics() {
@@ -628,12 +817,14 @@ function App() {
   }
 }
 
-function NotificationPopover({ onClose, onMarkRead, notificationsRead }: { onClose: () => void; onMarkRead: () => void; notificationsRead: boolean }) {
-  return <div className="notification-layer" onClick={onClose}><div className="notification-popover" onClick={(event) => event.stopPropagation()}><div className="notification-header"><div><span className="eyebrow">RIDESATHI INBOX</span><h2>Notifications</h2></div><button className="icon-btn light" onClick={onClose}><X size={17} /></button></div><div className="notification-list"><div className={`notification-item ${!notificationsRead ? 'unread' : ''}`}><div className="notification-item-icon green"><CheckCircle2 size={17} /></div><div><strong>Booking confirmed</strong><span>Your Suzuki Access pickup is confirmed for 18 Oct.</span><small>8 min ago</small></div>{!notificationsRead && <i />}</div><div className={`notification-item ${!notificationsRead ? 'unread' : ''}`}><div className="notification-item-icon orange"><ShieldCheck size={17} /></div><div><strong>KYC verified</strong><span>Your masked ID is ready for safer handover.</span><small>22 min ago</small></div>{!notificationsRead && <i />}</div><div className="notification-item"><div className="notification-item-icon blue"><Headphones size={17} /></div><div><strong>Support is on standby</strong><span>Live support is available throughout your active rental.</span><small>Yesterday</small></div></div></div><button className="notification-footer" onClick={onMarkRead}>{notificationsRead ? 'All notifications read' : 'Mark all as read'} <Check size={14} /></button></div></div>;
+function NotificationPopover({ role, onClose, onMarkRead, notificationsRead }: { role: Role; onClose: () => void; onMarkRead: () => void; notificationsRead: boolean }) {
+  const items = notificationsByRole[role];
+  const iconFor = (icon: AppNotification['icon']) => icon === 'check' ? CheckCircle2 : icon === 'shield' ? ShieldCheck : icon === 'headphones' ? Headphones : icon === 'bike' ? Bike : icon === 'alert' ? ShieldAlert : FileCheck2;
+  return <div className="notification-layer" onClick={onClose}><div className="notification-popover" onClick={(event) => event.stopPropagation()}><div className="notification-header"><div><span className="eyebrow">RIDESATHI INBOX · {demoAccounts[role].label.toUpperCase()}</span><h2>Notifications</h2></div><button className="icon-btn light" onClick={onClose}><X size={17} /></button></div><div className="notification-list">{items.map((item, index) => { const ItemIcon = iconFor(item.icon); const isUnread = !notificationsRead && index < 2; return <div className={`notification-item ${isUnread ? 'unread' : ''}`} key={`${role}-${item.title}`}><div className={`notification-item-icon ${item.tone}`}><ItemIcon size={17} /></div><div><strong>{item.title}</strong><span>{item.body}</span><small>{item.time}</small></div>{isUnread && <i />}</div>; })}</div><button className="notification-footer" onClick={onMarkRead}>{notificationsRead ? 'All notifications read' : 'Mark all as read'} <Check size={14} /></button></div></div>;
 }
 
-function LoginScreen({ email, password, setEmail, setPassword, role, setRole, onLogin, onDemo }: { email: string; password: string; setEmail: (v: string) => void; setPassword: (v: string) => void; role: Role; setRole: (r: Role) => void; onLogin: () => void; onDemo: (r: Role) => void }) {
-  return <div className="login-screen"><div className="login-status"><LiveClock /><span className="status-icons"><span className="signal" /><span className="wifi" /><span className="battery"><i /></span></span></div><div className="login-brand"><div className="logo-mark"><Navigation size={21} fill="white" /></div><span>Ride<span>Sathi</span></span><small>VERIFIED LOCAL RIDES</small></div><div className="login-hero"><div className="login-map"><div className="login-road road-one" /><div className="login-road road-two" /><div className="login-road road-three" /><span className="login-map-pin"><MapPin size={27} fill={colors.orange} /></span><span className="login-map-dot dot-one" /><span className="login-map-dot dot-two" /></div><div className="login-hero-copy"><span className="eyebrow">YOUR RIDE, YOUR SATHI</span><h1>See Mount Abu<br /><em>your way.</em></h1><p>Verified rentals for unhurried hill days.</p></div></div><div className="login-card"><div className="role-selector"><button className={role === 'traveler' ? 'active' : ''} onClick={() => { setRole('traveler'); setEmail('traveler@demo.com'); }}>Traveler</button><button className={role === 'operator' ? 'active' : ''} onClick={() => { setRole('operator'); setEmail('operator@demo.com'); }}>Operator</button><button className={role === 'admin' ? 'active' : ''} onClick={() => { setRole('admin'); setEmail('admin@demo.com'); }}>Admin</button></div><div className="login-fields"><label><span>Email address</span><div className="input-wrap"><Smartphone size={17} /><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></div></label><label><span>Password</span><div className="input-wrap"><LockKeyhole size={17} /><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} /><button><EyeIcon /></button></div></label></div><button className="primary-btn login-btn" onClick={onLogin}>Continue to RideSathi <ArrowRight size={17} /></button><div className="demo-helper"><span>DEMO ACCESS</span><p>Tap a role to explore the full experience</p><div className="demo-links"><button onClick={() => onDemo('traveler')}><CircleUserRound size={14} /> Traveler <ArrowRight size={13} /></button><button onClick={() => onDemo('operator')}><Bike size={14} /> Operator <ArrowRight size={13} /></button><button onClick={() => onDemo('admin')}><ShieldCheck size={14} /> Admin <ArrowRight size={13} /></button></div></div></div><p className="login-footer"><ShieldCheck size={13} /> Safe, verified rentals · Mount Abu pilot</p></div>;
+function LoginScreen({ email, password, setEmail, setPassword, role, setRole, onLogin, onDemo, error, loading }: { email: string; password: string; setEmail: (v: string) => void; setPassword: (v: string) => void; role: Role; setRole: (r: Role) => void; onLogin: () => void; onDemo: (r: Role) => void; error: string | null; loading: boolean }) {
+  return <div className="login-screen"><div className="login-status"><LiveClock /><span className="status-icons"><span className="signal" /><span className="wifi" /><span className="battery"><i /></span></span></div><div className="login-brand"><div className="logo-mark"><Navigation size={21} fill="white" /></div><span>Ride<span>Sathi</span></span><small>VERIFIED LOCAL RIDES</small></div><div className="login-hero"><div className="login-map"><div className="login-road road-one" /><div className="login-road road-two" /><div className="login-road road-three" /><span className="login-map-pin"><MapPin size={27} fill={colors.orange} /></span><span className="login-map-dot dot-one" /><span className="login-map-dot dot-two" /></div><div className="login-hero-copy"><span className="eyebrow">YOUR RIDE, YOUR SATHI</span><h1>See Mount Abu<br /><em>your way.</em></h1><p>Verified rentals for unhurried hill days.</p></div></div><div className="login-card"><div className="role-selector"><button className={role === 'traveler' ? 'active' : ''} onClick={() => { setRole('traveler'); setEmail('traveler@demo.com'); }}>Traveler</button><button className={role === 'operator' ? 'active' : ''} onClick={() => { setRole('operator'); setEmail('operator@demo.com'); }}>Operator</button><button className={role === 'admin' ? 'active' : ''} onClick={() => { setRole('admin'); setEmail('admin@demo.com'); }}>Admin</button></div><div className="login-fields"><label><span>Email address</span><div className="input-wrap"><Smartphone size={17} /><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} aria-invalid={Boolean(error)} /></div></label><label><span>Password</span><div className="input-wrap"><LockKeyhole size={17} /><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} aria-invalid={Boolean(error)} /><button type="button"><EyeIcon /></button></div></label></div>{error && <div className="login-error" role="alert"><CircleAlert size={16} /><div><strong>We couldn't sign you in</strong><span>{error}</span></div></div>}<button className="primary-btn login-btn" onClick={onLogin} disabled={loading}>{loading ? <><RefreshCw size={16} className="spin" /> Signing you in…</> : <>Continue to RideSathi <ArrowRight size={17} /></>}</button><div className="demo-helper"><span>DEMO ACCESS</span><p>Tap a role to explore the full experience</p><div className="demo-links"><button onClick={() => onDemo('traveler')}><CircleUserRound size={14} /> Traveler <ArrowRight size={13} /></button><button onClick={() => onDemo('operator')}><Bike size={14} /> Operator <ArrowRight size={13} /></button><button onClick={() => onDemo('admin')}><ShieldCheck size={14} /> Admin <ArrowRight size={13} /></button></div></div></div><p className="login-footer"><ShieldCheck size={13} /> Safe, verified rentals · Mount Abu pilot</p></div>;
 }
 
 function BottomTabs({ tabs, active, onChange }: { tabs: { key: Screen; label: string; icon: LucideIcon }[]; active: Screen; onChange: (key: Screen) => void }) {
@@ -654,6 +845,9 @@ function FilterChip({ label, active, onClick }: { label: string; active?: boolea
 
 function StatusBadge({ status }: { status: string }) {
   return <span className={`status-badge ${status.toLowerCase().replace(/ /g, '-')}`}><i />{status}</span>;
+}
+function KycStatusBadge({ status }: { status: KycReview['status'] }) {
+  return <span className={`kyc-status ${status.toLowerCase()}`}><i />{status}</span>;
 }
 function SOSBadge({ status }: { status: string }) {
   return <span className={`sos-badge ${status.toLowerCase()}`}><i />{status}</span>;
@@ -704,6 +898,10 @@ function Timeline({ status }: { status: string }) {
   const steps = active ? [['Booked', '10 Oct · 8:20 AM'], ['Confirmed', '10 Oct · 8:21 AM'], ['Active rental', 'Today · 10:30 AM']] : [['Booked', '18 Oct · 6:14 PM'], ['KYC verified', '18 Oct · 6:15 PM'], ['Confirmed', '18 Oct · 6:16 PM']];
   return <div className="timeline">{steps.map(([name, date], i) => <div className="timeline-row" key={name}><div className={`timeline-dot ${i === steps.length - 1 ? 'current' : ''}`}><Check size={12} /></div><div><strong>{name}</strong><span>{date}</span></div>{i < steps.length - 1 && <i />}</div>)}</div>;
 }
+function AdminBookingActionSheet({ booking, onClose, onAction }: { booking: Booking; onClose: () => void; onAction: (message: string) => void }) {
+  return <div className="sheet-backdrop" onClick={onClose}><div className="action-sheet" onClick={(event) => event.stopPropagation()}><div className="sheet-handle" /><div className="sheet-header"><div><span className="eyebrow">ADMIN ACTIONS</span><h2>{booking.id}</h2></div><button className="icon-btn light" onClick={onClose}><X size={18} /></button></div><button className="action-sheet-row" onClick={() => onAction('Booking flagged for review')}><ShieldAlert size={18} /><span><strong>Flag booking</strong><small>Send this booking to the safety queue.</small></span><ChevronRight size={16} /></button><button className="action-sheet-row" onClick={() => onAction('Traveler contact note added')}><MessageCircle size={18} /><span><strong>Add support note</strong><small>Record an internal admin follow-up.</small></span><ChevronRight size={16} /></button><button className="action-sheet-row danger-row" onClick={() => onAction('Booking cancellation review started')}><Trash2 size={18} /><span><strong>Start cancellation review</strong><small>Keep the booking state unchanged until approved.</small></span><ChevronRight size={16} /></button></div></div>;
+}
+
 function ConfirmModal({ title, text, confirm, onConfirm, onClose, danger }: { title: string; text: string; confirm: string; onConfirm: () => void; onClose: () => void; danger?: boolean }) {
   return <div className="modal-backdrop" onClick={onClose}><div className="confirm-modal" onClick={(e) => e.stopPropagation()}><button className="modal-close" onClick={onClose}><X size={18} /></button><div className={danger ? 'modal-icon danger' : 'modal-icon'}>{danger ? <ShieldAlert size={24} /> : <Info size={23} />}</div><h2>{title}</h2><p>{text}</p><div className="modal-actions"><button className="secondary-btn" onClick={onClose}>Not now</button><button className={danger ? 'danger-btn' : 'primary-btn'} onClick={onConfirm}>{confirm}</button></div></div></div>;
 }
