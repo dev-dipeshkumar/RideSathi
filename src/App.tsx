@@ -1,0 +1,637 @@
+import { useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
+import type { LucideIcon } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Bell,
+  Bike,
+  CalendarDays,
+  Camera,
+  Car,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  CircleAlert,
+  CircleUserRound,
+  Clock3,
+  CreditCard,
+  FileCheck2,
+  FileText,
+  Filter,
+  Fuel,
+  Gauge,
+  Headphones,
+  Home,
+  ImagePlus,
+  IndianRupee,
+  Info,
+  KeyRound,
+  Landmark,
+  LifeBuoy,
+  ListFilter,
+  LockKeyhole,
+  LogOut,
+  MapPin,
+  Menu,
+  MessageCircle,
+  MoreHorizontal,
+  Navigation,
+  PackageCheck,
+  Pencil,
+  Phone,
+  Plus,
+  QrCode,
+  ReceiptText,
+  RefreshCw,
+  Search,
+  Send,
+  ShieldCheck,
+  ShieldAlert,
+  SlidersHorizontal,
+  Smartphone,
+  Sparkles,
+  Star,
+  Tag,
+  Timer,
+  Trash2,
+  Upload,
+  UserCheck,
+  Users,
+  WalletCards,
+  X,
+  Zap,
+} from 'lucide-react';
+
+// RideSathi is intentionally composed as a portrait mobile surface. The preview is a
+// device-sized client so the same interaction model can be lifted into Expo/React Native.
+
+type Role = 'traveler' | 'operator' | 'admin';
+type Screen =
+  | 'login'
+  | 'explore'
+  | 'bookings'
+  | 'active'
+  | 'profile'
+  | 'vehicle'
+  | 'bookingFlow'
+  | 'kyc'
+  | 'payment'
+  | 'confirmation'
+  | 'bookingDetail'
+  | 'feedback'
+  | 'dashboard'
+  | 'operatorBookings'
+  | 'vehicles'
+  | 'vehicleForm'
+  | 'operatorBookingDetail'
+  | 'handover'
+  | 'activeRentals'
+  | 'activeRentalDetail'
+  | 'return'
+  | 'alerts'
+  | 'reviews'
+  | 'approvals'
+  | 'adminBookings'
+  | 'adminSOS'
+  | 'metrics';
+
+type VehicleStatus = 'AVAILABLE' | 'RESERVED' | 'RENTED' | 'PENDING_INSPECTION' | 'MAINTENANCE' | 'BLOCKED';
+type BookingStatus = 'PENDING_KYC' | 'PENDING_PAYMENT' | 'CONFIRMED' | 'ACTIVE' | 'RETURNED' | 'COMPLETED' | 'CANCELLED';
+
+type Vehicle = {
+  id: string;
+  type: 'Scooter' | 'Bike' | 'Car' | 'Jeep';
+  name: string;
+  price: number;
+  operator: string;
+  rating: number;
+  reviews: number;
+  status: VehicleStatus;
+  color: string;
+  verified: boolean;
+  seats: number;
+  fuel: string;
+  condition: string;
+};
+
+type Booking = {
+  id: string;
+  vehicleId: string;
+  vehicleName: string;
+  operator: string;
+  start: string;
+  end: string;
+  amount: number;
+  status: BookingStatus;
+  payment: 'PENDING' | 'SUCCESS' | 'FAILED';
+  token: string;
+  kyc: 'PENDING' | 'VERIFIED' | 'REJECTED';
+  rating?: number;
+};
+
+type SOSAlert = {
+  id: string;
+  traveler: string;
+  vehicle: string;
+  time: string;
+  status: 'RAISED' | 'ACKNOWLEDGED' | 'RESOLVED';
+  location: string;
+};
+
+const colors = {
+  green: '#1f684b',
+  orange: '#e89532',
+  ink: '#15342a',
+  muted: '#73817a',
+  red: '#e24e43',
+};
+
+const demoAccounts: Record<Role, { email: string; name: string; label: string }> = {
+  traveler: { email: 'traveler@demo.com', name: 'Aarav Mehta', label: 'Traveler' },
+  operator: { email: 'operator@demo.com', name: 'Abu Hill Rentals', label: 'Operator' },
+  admin: { email: 'admin@demo.com', name: 'RideSathi Admin', label: 'Admin' },
+};
+
+const vehiclesSeed: Vehicle[] = [
+  { id: 'v1', type: 'Scooter', name: 'Honda Activa 6G', price: 499, operator: 'Abu Hill Rentals', rating: 4.9, reviews: 86, status: 'AVAILABLE', color: '#d6ebe1', verified: true, seats: 2, fuel: 'Petrol', condition: 'Serviced this week · Helmet included' },
+  { id: 'v2', type: 'Scooter', name: 'Suzuki Access 125', price: 549, operator: 'Mount Abu Riders', rating: 4.8, reviews: 54, status: 'RESERVED', color: '#e9e4d5', verified: true, seats: 2, fuel: 'Petrol', condition: 'Clean & well maintained · 2 helmets' },
+  { id: 'v3', type: 'Bike', name: 'Bajaj Pulsar 150', price: 699, operator: 'Abu Hill Rentals', rating: 4.7, reviews: 38, status: 'AVAILABLE', color: '#dbe4eb', verified: true, seats: 2, fuel: 'Petrol', condition: 'City-ready · Top box available' },
+  { id: 'v4', type: 'Bike', name: 'Royal Enfield Classic', price: 1199, operator: 'Mount Abu Riders', rating: 4.9, reviews: 31, status: 'AVAILABLE', color: '#efe0d4', verified: true, seats: 2, fuel: 'Petrol', condition: 'Mountain tuned · Riding kit included' },
+  { id: 'v5', type: 'Car', name: 'Maruti WagonR', price: 1800, operator: 'Abu Hill Rentals', rating: 4.6, reviews: 24, status: 'AVAILABLE', color: '#e5e5eb', verified: true, seats: 5, fuel: 'Petrol', condition: 'AC working · Unlimited local miles' },
+  { id: 'v6', type: 'Car', name: 'Hyundai i10', price: 2000, operator: 'Mount Abu Riders', rating: 4.8, reviews: 19, status: 'AVAILABLE', color: '#e0e8ee', verified: true, seats: 5, fuel: 'Petrol', condition: 'AC working · Clean interiors' },
+  { id: 'v7', type: 'Jeep', name: 'Mahindra Thar', price: 3500, operator: 'Abu Hill Rentals', rating: 4.9, reviews: 15, status: 'AVAILABLE', color: '#e7eadc', verified: true, seats: 4, fuel: 'Diesel', condition: 'Hill drive ready · Soft top' },
+  { id: 'v8', type: 'Scooter', name: 'Honda Dio', price: 479, operator: 'Mount Abu Riders', rating: 4.5, reviews: 8, status: 'PENDING_INSPECTION', color: '#ece1ea', verified: false, seats: 2, fuel: 'Petrol', condition: 'Awaiting verification' },
+];
+
+const bookingsSeed: Booking[] = [
+  { id: 'RS-2048', vehicleId: 'v2', vehicleName: 'Suzuki Access 125', operator: 'Mount Abu Riders', start: '18 Oct · 9:00 AM', end: '19 Oct · 9:00 AM', amount: 549, status: 'CONFIRMED', payment: 'SUCCESS', token: 'RS-7K4M2', kyc: 'VERIFIED' },
+  { id: 'RS-1932', vehicleId: 'v1', vehicleName: 'Honda Activa 6G', operator: 'Abu Hill Rentals', start: 'Today · 10:30 AM', end: 'Today · 7:30 PM', amount: 499, status: 'ACTIVE', payment: 'SUCCESS', token: 'RS-7392', kyc: 'VERIFIED' },
+  { id: 'RS-1780', vehicleId: 'v3', vehicleName: 'Bajaj Pulsar 150', operator: 'Abu Hill Rentals', start: '10 Oct · 8:00 AM', end: '10 Oct · 8:00 PM', amount: 699, status: 'COMPLETED', payment: 'SUCCESS', token: 'RS-5QD81', kyc: 'VERIFIED', rating: 5 },
+];
+
+const alertsSeed: SOSAlert[] = [
+  { id: 'SOS-09', traveler: 'Aarav Mehta', vehicle: 'Honda Activa 6G', time: 'Just now · 10:56 AM', status: 'RAISED', location: 'Near Nakki Lake · 24.5926, 72.7156' },
+  { id: 'SOS-08', traveler: 'Priya Shah', vehicle: 'Royal Enfield Classic', time: 'Yesterday · 5:40 PM', status: 'RESOLVED', location: 'Sunset Point · 24.6061, 72.7088' },
+];
+
+const formatCurrency = (value: number) => `₹${value.toLocaleString('en-IN')}`;
+
+function vehicleArt(type: Vehicle['type'], color: string, compact = false) {
+  const isCar = type === 'Car' || type === 'Jeep';
+  const isBike = type === 'Bike';
+  const body = isCar ? '#406d5b' : isBike ? '#e89532' : '#2e8a64';
+  const vehicle = isCar
+    ? `<path d="M33 100h166l-12-31H55L33 100Z" fill="${body}"/><path d="m55 69 16-29h66l27 29" fill="${body}"/><path d="M82 47h51l14 20H70l12-20Z" fill="#e8f0ec"/><circle cx="66" cy="105" r="17" fill="#17362c"/><circle cx="168" cy="105" r="17" fill="#17362c"/><circle cx="66" cy="105" r="7" fill="#b3c9be"/><circle cx="168" cy="105" r="7" fill="#b3c9be"/>`
+    : `<circle cx="67" cy="113" r="17" fill="#17362c"/><circle cx="166" cy="113" r="17" fill="#17362c"/><circle cx="67" cy="113" r="7" fill="#b3c9be"/><circle cx="166" cy="113" r="7" fill="#b3c9be"/><path d="M67 98 91 58l42 2 33 38h-25l-20-19-19 20H67Z" fill="${body}"/><path d="m100 50 12-23h22l-12 25" fill="${body}"/><path d="m129 28 13 4 16 29" stroke="#17362c" stroke-width="6" fill="none" stroke-linecap="round"/>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 150"><rect width="240" height="150" rx="24" fill="${color}"/><circle cx="205" cy="27" r="45" fill="#ffffff" opacity=".22"/><path d="M0 128c35-19 72-4 110-17 37-13 78-17 130 1v38H0Z" fill="#ffffff" opacity=".38"/>${vehicle}<text x="18" y="25" font-family="Arial" font-size="11" font-weight="700" fill="#315146" opacity=".7">MOUNT ABU · VERIFIED</text></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+function Icon({ icon: I, size = 18, strokeWidth = 1.9, className = '' }: { icon: LucideIcon; size?: number; strokeWidth?: number; className?: string }) {
+  return <I size={size} strokeWidth={strokeWidth} className={className} />;
+}
+
+function App() {
+  const [authenticated, setAuthenticated] = useState(false);
+  const [role, setRole] = useState<Role>('traveler');
+  const [screen, setScreen] = useState<Screen>('login');
+  const [email, setEmail] = useState('traveler@demo.com');
+  const [password, setPassword] = useState('demo123');
+  const [vehicles, setVehicles] = useState<Vehicle[]>(vehiclesSeed);
+  const [bookings, setBookings] = useState<Booking[]>(bookingsSeed);
+  const [alerts, setAlerts] = useState<SOSAlert[]>(alertsSeed);
+  const [selectedVehicle, setSelectedVehicle] = useState<Vehicle>(vehiclesSeed[0]);
+  const [selectedBooking, setSelectedBooking] = useState<Booking>(bookingsSeed[0]);
+  const [toast, setToast] = useState<string | null>(null);
+  const [modal, setModal] = useState<'filters' | 'sos' | 'cancel' | 'logout' | 'start' | 'end' | 'return' | null>(null);
+  const [activeRental, setActiveRental] = useState(true);
+  const [locationConsent, setLocationConsent] = useState(false);
+  const [sosRaised, setSosRaised] = useState(false);
+  const [kycSubmitted, setKycSubmitted] = useState(false);
+  const [paymentState, setPaymentState] = useState<'idle' | 'success' | 'failed'>('idle');
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+  const [feedbackRating, setFeedbackRating] = useState(0);
+  const [filterType, setFilterType] = useState('All');
+  const [adminTab, setAdminTab] = useState<'operators' | 'vehicles'>('operators');
+  const [operatorTab, setOperatorTab] = useState<'all' | 'upcoming' | 'active'>('all');
+  const [formVehicle, setFormVehicle] = useState({ type: 'Scooter', make: '', model: '', reg: '', price: '', fuel: 'Petrol', seats: '2', notes: '' });
+  const [returnNotes, setReturnNotes] = useState('');
+  const [operatorActiveVehicleId, setOperatorActiveVehicleId] = useState('v1');
+
+  const currentUser = demoAccounts[role];
+  const liveVehicle = vehicles.find((v) => v.id === 'v1') ?? vehicles[0];
+
+  const notify = (message: string) => {
+    setToast(message);
+    window.setTimeout(() => setToast(null), 3000);
+  };
+
+  const quickLogin = (nextRole: Role) => {
+    const account = demoAccounts[nextRole];
+    setRole(nextRole);
+    setEmail(account.email);
+    setPassword('demo123');
+    setAuthenticated(true);
+    setScreen(nextRole === 'traveler' ? 'explore' : nextRole === 'operator' ? 'dashboard' : 'approvals');
+    notify(`Welcome back, ${account.name.split(' ')[0]}`);
+  };
+
+  const handleLogin = () => {
+    const matchedRole = (Object.keys(demoAccounts) as Role[]).find((key) => demoAccounts[key].email === email.trim().toLowerCase());
+    if (!matchedRole || password.length < 4) {
+      notify('Use one of the demo accounts below');
+      return;
+    }
+    quickLogin(matchedRole);
+  };
+
+  const signOut = () => {
+    setAuthenticated(false);
+    setScreen('login');
+    setModal(null);
+  };
+
+  const navigate = (next: Screen) => setScreen(next);
+
+  const updateBooking = (id: string, patch: Partial<Booking>) => {
+    setBookings((all) => all.map((booking) => (booking.id === id ? { ...booking, ...patch } : booking)));
+  };
+
+  const confirmBookingFlow = () => {
+    setSelectedBooking({ id: 'RS-2216', vehicleId: selectedVehicle.id, vehicleName: selectedVehicle.name, operator: selectedVehicle.operator, start: '21 Oct · 9:00 AM', end: '22 Oct · 9:00 AM', amount: selectedVehicle.price, status: 'PENDING_KYC', payment: 'PENDING', token: '—', kyc: 'PENDING' });
+    setKycSubmitted(false);
+    setPaymentState('idle');
+    navigate('kyc');
+  };
+
+  const submitKyc = () => {
+    setKycSubmitted(true);
+    setSelectedBooking((booking) => ({ ...booking, kyc: 'VERIFIED', status: 'PENDING_PAYMENT' }));
+    notify('KYC submitted securely · masked ID saved');
+    window.setTimeout(() => navigate('payment'), 400);
+  };
+
+  const payNow = (shouldFail = false) => {
+    if (shouldFail) {
+      setPaymentState('failed');
+      return;
+    }
+    const token = `RS-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
+    const paidBooking = { ...selectedBooking, status: 'CONFIRMED' as BookingStatus, payment: 'SUCCESS' as const, token };
+    setSelectedBooking(paidBooking);
+    setBookings((all) => [paidBooking, ...all.filter((booking) => booking.id !== paidBooking.id)]);
+    setPaymentState('success');
+    navigate('confirmation');
+  };
+
+  const raiseSos = () => {
+    if (!activeRental) {
+      notify('SOS is available only during an active rental');
+      setModal(null);
+      return;
+    }
+    setSosRaised(true);
+    setAlerts((all) => [{ id: `SOS-${all.length + 2}`, traveler: 'Aarav Mehta', vehicle: liveVehicle.name, time: 'Just now · 10:56 AM', status: 'RAISED', location: locationConsent ? 'Live location shared · Mount Abu' : 'Location unavailable', }, ...all]);
+    setModal(null);
+    notify('SOS sent to operator & RideSathi support');
+  };
+
+  const startRental = () => {
+    setActiveRental(true);
+    setSelectedBooking((booking) => ({ ...booking, status: 'ACTIVE' }));
+    updateBooking(selectedBooking.id, { status: 'ACTIVE' });
+    setOperatorActiveVehicleId(selectedBooking.vehicleId);
+    setVehicles((all) => all.map((v) => (v.id === selectedBooking.vehicleId ? { ...v, status: 'RENTED' } : v)));
+    setModal(null);
+    notify('Rental started · vehicle is now RENTED');
+    navigate(role === 'operator' ? 'activeRentals' : 'active');
+  };
+
+  const closeRental = () => {
+    setActiveRental(false);
+    setSelectedBooking((booking) => ({ ...booking, status: 'RETURNED' }));
+    updateBooking(selectedBooking.id, { status: 'RETURNED' });
+    setVehicles((all) => all.map((v) => (v.id === selectedBooking.vehicleId ? { ...v, status: 'AVAILABLE' } : v)));
+    setModal(null);
+    notify('Rental closed · vehicle marked available');
+    navigate(role === 'operator' ? 'activeRentals' : 'bookings');
+  };
+
+  const approve = (label: string) => notify(`${label} approved and now visible in the network`);
+  const reject = (label: string) => notify(`${label} sent back for review`);
+
+  if (!authenticated) return <LoginScreen email={email} password={password} setEmail={setEmail} setPassword={setPassword} role={role} setRole={setRole} onLogin={handleLogin} onDemo={quickLogin} />;
+
+  return (
+    <div className="mobile-app">
+      <div className="status-bar"><span>9:41</span><span className="status-icons"><span className="signal" /><span className="wifi" /><span className="battery"><i /></span></span></div>
+      {role === 'traveler' && <TravelerApp />}
+      {role === 'operator' && <OperatorApp />}
+      {role === 'admin' && <AdminApp />}
+      {toast && <div className="toast"><CheckCircle2 size={17} /> {toast}</div>}
+      {modal === 'filters' && <FilterSheet onClose={() => setModal(null)} />}
+      {modal === 'sos' && <ConfirmModal danger title="Send SOS alert?" text={locationConsent ? 'Your live location will be shared with the operator and RideSathi support.' : 'Location sharing is off. We will send the alert without your location.'} confirm="Send SOS" onConfirm={raiseSos} onClose={() => setModal(null)} />}
+      {modal === 'cancel' && <ConfirmModal title="Cancel this booking?" text="Cancellation policy applies. Your refund status will be shown after confirmation." confirm="Cancel booking" onConfirm={() => { updateBooking(selectedBooking.id, { status: 'CANCELLED' }); setModal(null); navigate('bookings'); notify('Booking cancelled'); }} onClose={() => setModal(null)} />}
+      {modal === 'logout' && <ConfirmModal title="Switch account?" text="You will return to the role-based login screen." confirm="Log out" onConfirm={signOut} onClose={() => setModal(null)} />}
+      {modal === 'start' && <ConfirmModal title="Start this rental?" text="Token verified. Confirm handover only when the vehicle and documents are checked." confirm="Start rental" onConfirm={startRental} onClose={() => setModal(null)} />}
+      {modal === 'end' && <ConfirmModal title="End active rental?" text="The vehicle will move to the return check and location sharing will stop." confirm="Continue to return" onConfirm={() => { setModal(null); navigate('return'); }} onClose={() => setModal(null)} />}
+      {modal === 'return' && <ConfirmModal title="Close this rental?" text="Confirm the vehicle is returned and the return notes are complete." confirm="Close rental" onConfirm={closeRental} onClose={() => setModal(null)} />}
+    </div>
+  );
+
+  function TravelerApp() {
+    const tabs = [
+      { key: 'explore' as Screen, label: 'Explore', icon: Home },
+      { key: 'bookings' as Screen, label: 'Bookings', icon: ReceiptText },
+      { key: 'active' as Screen, label: 'Active', icon: Navigation },
+      { key: 'profile' as Screen, label: 'Profile', icon: CircleUserRound },
+    ];
+    const isHome = ['explore', 'bookings', 'active', 'profile'].includes(screen);
+    return <>
+      {screen === 'explore' && <TravelerExplore />}
+      {screen === 'bookings' && <TravelerBookings />}
+      {screen === 'active' && <TravelerActive />}
+      {screen === 'profile' && <TravelerProfile />}
+      {screen === 'vehicle' && <VehicleDetail />}
+      {screen === 'bookingFlow' && <BookingFlow />}
+      {screen === 'kyc' && <KycScreen />}
+      {screen === 'payment' && <PaymentScreen />}
+      {screen === 'confirmation' && <ConfirmationScreen />}
+      {screen === 'bookingDetail' && <BookingDetail />}
+      {screen === 'feedback' && <FeedbackScreen onBack={() => navigate('bookings')} onSubmit={() => { setFeedbackSubmitted(true); notify('Thank you for your feedback'); navigate('bookings'); }} />}
+      {isHome && <BottomTabs tabs={tabs} active={screen} onChange={navigate} />}
+    </>;
+  }
+
+  function TravelerExplore() {
+    const visibleVehicles = vehicles.filter((vehicle) => (filterType === 'All' ? true : vehicle.type === filterType) && vehicle.verified && vehicle.status !== 'PENDING_INSPECTION');
+    return <div className="screen scroll-screen">
+      <div className="topbar explore-topbar"><div><div className="eyebrow"><MapPin size={13} fill={colors.orange} /> PILOT DESTINATION</div><h1>Mount Abu <ChevronDown size={18} /></h1></div><button className="icon-btn notification"><Bell size={19} /><span /></button></div>
+      <div className="welcome-line"><span>Good morning, Aarav</span><Sparkles size={14} color={colors.orange} /></div>
+      <button className="search-control" onClick={() => setModal('filters')}><Search size={19} /><span>Where will you ride today?</span><span className="filter-circle"><SlidersHorizontal size={16} /></span></button>
+      <div className="mini-map"><div className="map-copy"><span className="map-kicker">EXPLORE THE HILLS</span><strong>Your next view is<br />around the corner.</strong><button onClick={() => setModal('filters')}>See nearby rides <ArrowRight size={14} /></button></div><div className="map-lines"><span /><span /><span /><i className="map-pin pin-a"><MapPin size={21} fill={colors.orange} /></i><i className="map-pin pin-b"><MapPin size={18} fill={colors.green} /></i><small>NAKKI LAKE</small></div></div>
+      <div className="section-head"><div><h2>Available near you</h2><p>{visibleVehicles.length} verified rides in Mount Abu</p></div><button className="text-btn" onClick={() => setModal('filters')}><Filter size={15} /> Filters</button></div>
+      <div className="filter-row"><FilterChip label="All rides" active={filterType === 'All'} onClick={() => setFilterType('All')} /><FilterChip label="Scooters" active={filterType === 'Scooter'} onClick={() => setFilterType('Scooter')} /><FilterChip label="Bikes" active={filterType === 'Bike'} onClick={() => setFilterType('Bike')} /><FilterChip label="Cars" active={filterType === 'Car'} onClick={() => setFilterType('Car')} /></div>
+      <div className="vehicle-list">{visibleVehicles.slice(0, 5).map((vehicle) => <VehicleCard key={vehicle.id} vehicle={vehicle} onClick={() => { setSelectedVehicle(vehicle); navigate('vehicle'); }} />)}</div>
+      <button className="view-map-btn" onClick={() => notify('Map view centered on Mount Abu')}><MapPin size={17} /> View all on map</button>
+    </div>;
+  }
+
+  function VehicleCard({ vehicle, onClick }: { vehicle: Vehicle; onClick: () => void }) {
+    return <button className="vehicle-card" onClick={onClick}><img src={vehicleArt(vehicle.type, vehicle.color)} alt="" /><div className="vehicle-card-body"><div className="card-title-row"><div><h3>{vehicle.name}</h3><p>{vehicle.type} · {vehicle.seats} seats · {vehicle.fuel}</p></div><span className="verified-pill"><ShieldCheck size={13} /> Verified</span></div><div className="card-meta"><span className="rating"><Star size={14} fill="currentColor" /> {vehicle.rating} <em>({vehicle.reviews})</em></span><span className="dot-separator">·</span><span>{vehicle.operator}</span></div><div className="price-row"><div><strong>{formatCurrency(vehicle.price)}</strong><small>/ day</small></div><StatusBadge status={vehicle.status === 'AVAILABLE' ? 'Available' : 'Reserved'} /><ChevronRight size={18} className="card-arrow" /></div></div></button>;
+  }
+
+  function VehicleDetail() {
+    return <div className="screen scroll-screen detail-screen"><DetailHeader title="Vehicle details" onBack={() => navigate('explore')} />
+      <img className="detail-hero" src={vehicleArt(selectedVehicle.type, selectedVehicle.color)} alt="" />
+      <div className="detail-content"><div className="detail-title-row"><div><div className="eyebrow green-text"><ShieldCheck size={14} /> VERIFIED RIDE</div><h1>{selectedVehicle.name}</h1><p>{selectedVehicle.type} · {selectedVehicle.seats} seats · {selectedVehicle.fuel}</p></div><div className="rating-box"><Star size={16} fill="currentColor" /> <strong>{selectedVehicle.rating}</strong><small>{selectedVehicle.reviews} rides</small></div></div><div className="operator-line"><div className="avatar avatar-green">AH</div><div><strong>{selectedVehicle.operator}</strong><span><ShieldCheck size={13} /> Verified operator · 4.8 rating</span></div><ChevronRight size={17} /></div><div className="info-grid"><InfoTile icon={IndianRupee} label="Rate" value={`${formatCurrency(selectedVehicle.price)} / day`} /><InfoTile icon={Fuel} label="Fuel" value={selectedVehicle.fuel} /><InfoTile icon={Gauge} label="Condition" value="Excellent" /><InfoTile icon={CalendarDays} label="Availability" value="Available now" /></div><section className="content-section"><h3>What you should know</h3><div className="note-row"><CheckCircle2 size={17} color={colors.green} /><span>{selectedVehicle.condition}</span></div><div className="note-row"><CheckCircle2 size={17} color={colors.green} /><span>RC, insurance & rental permit verified</span></div><div className="note-row"><CheckCircle2 size={17} color={colors.green} /><span>Free cancellation up to 24 hours before pickup</span></div></section><section className="content-section"><h3>Pickup & documents</h3><div className="pickup-card"><MapPin size={18} color={colors.orange} /><div><strong>Abu Hill Rentals office</strong><span>Near Nakki Lake · 2.1 km away</span></div><ChevronRight size={17} /></div><p className="helper-copy">Bring your original driving licence. A masked ID and a live selfie are required at KYC.</p></section></div><div className="sticky-cta"><div><small>From</small><strong>{formatCurrency(selectedVehicle.price)} <em>/ day</em></strong></div><button className="primary-btn" onClick={() => navigate('bookingFlow')}>Book now <ArrowRight size={17} /></button></div>
+    </div>;
+  }
+
+  function BookingFlow() {
+    const [selectedDay, setSelectedDay] = useState('21');
+    return <div className="screen scroll-screen detail-screen"><DetailHeader title="Plan your ride" step="1 of 3" onBack={() => navigate('vehicle')} /><div className="stepper"><span className="active" /><span /><span /></div><div className="flow-content"><div className="flow-heading"><div className="mini-vehicle"><img src={vehicleArt(selectedVehicle.type, selectedVehicle.color)} alt="" /></div><div><h2>{selectedVehicle.name}</h2><p>{selectedVehicle.operator} · {formatCurrency(selectedVehicle.price)}/day</p></div></div><section className="form-section"><div className="section-title"><h3>When do you need it?</h3><button className="text-btn"><CalendarDays size={15} /> Calendar</button></div><div className="date-strip">{['20', '21', '22', '23'].map((day, index) => <button key={day} className={selectedDay === day ? 'date-card active' : 'date-card'} onClick={() => setSelectedDay(day)}><small>{['SUN', 'MON', 'TUE', 'WED'][index]}</small><strong>{day}</strong><i /></button>)}</div><div className="time-row"><label><span>Pickup</span><button>9:00 AM <ChevronDown size={15} /></button></label><ArrowRight size={16} color="#a1aaa5" /><label><span>Return</span><button>9:00 AM <ChevronDown size={15} /></button></label></div></section><section className="summary-card"><div className="summary-line"><span>1 day × {formatCurrency(selectedVehicle.price)}</span><strong>{formatCurrency(selectedVehicle.price)}</strong></div><div className="summary-line muted-line"><span>RideSathi service fee</span><strong>{formatCurrency(Math.round(selectedVehicle.price * .1))}</strong></div><div className="summary-total"><span>You'll pay</span><strong>{formatCurrency(Math.round(selectedVehicle.price * 1.1))}</strong></div><p><ShieldCheck size={15} /> Secure mock payment · commission included</p></section><div className="policy-line"><LockKeyhole size={16} /><span>Free cancellation up to 24 hours before pickup.</span><ChevronRight size={15} /></div></div><div className="sticky-cta"><div><small>Total</small><strong>{formatCurrency(Math.round(selectedVehicle.price * 1.1))}</strong></div><button className="primary-btn" onClick={confirmBookingFlow}>Continue to KYC <ArrowRight size={17} /></button></div></div>;
+  }
+
+  function KycScreen() {
+    return <div className="screen scroll-screen detail-screen"><DetailHeader title="Verify your identity" step="2 of 3" onBack={() => navigate('bookingFlow')} /><div className="stepper"><span className="active" /><span className="active" /><span /></div><div className="kyc-intro"><div className="secure-icon"><ShieldCheck size={23} /></div><div><h2>Quick KYC, safer rides</h2><p>Your documents are encrypted. We only keep a masked ID number.</p></div></div><div className="form-content"><Field label="Full name" value="Aarav Mehta" icon={UserCheck} /><Field label="Phone number" value="+91 98765 43210" icon={Smartphone} /><Field label="Driving licence number" value="RJ14 2024 008621" icon={CreditCard} /><SelectField label="ID type" value="Aadhaar" icon={FileText} /><Field label="ID number (masked)" value="•••• •••• 6218" icon={LockKeyhole} helper="Only the last 4 digits are stored." /><UploadField label="Driving licence" /><UploadField label="ID document" /><label className="consent-check"><input type="checkbox" defaultChecked /><span className="check-box"><Check size={13} /></span><span>I consent to RideSathi verifying these documents for this booking.</span></label></div><div className="sticky-cta"><div><small>Privacy-first</small><strong>Masked ID only</strong></div><button className="primary-btn" onClick={submitKyc}>{kycSubmitted ? 'Submitted' : 'Submit KYC'} <ArrowRight size={17} /></button></div></div>;
+  }
+
+  function PaymentScreen() {
+    return <div className="screen scroll-screen detail-screen"><DetailHeader title="Complete payment" step="3 of 3" onBack={() => navigate('kyc')} /><div className="stepper"><span className="active" /><span className="active" /><span className="active" /></div><div className="payment-content"><div className="payment-lock"><div className="lock-orbit"><LockKeyhole size={28} /></div><span>MOCK PAYMENT</span><h2>Ready when you are.</h2><p>Secure your Mount Abu ride with a quick demo payment.</p></div><div className="pay-card"><div className="payment-vehicle"><div className="mini-vehicle"><img src={vehicleArt(selectedVehicle.type, selectedVehicle.color)} alt="" /></div><div><strong>{selectedVehicle.name}</strong><span>{selectedBooking.start} → {selectedBooking.end}</span></div></div><div className="amount-line"><span>Booking amount</span><strong>{formatCurrency(selectedBooking.amount)}</strong></div><div className="amount-line fee"><span>Platform commission <small>10% internally recorded</small></span><strong>{formatCurrency(Math.round(selectedBooking.amount * .1))}</strong></div><div className="amount-total"><span>Total payable</span><strong>{formatCurrency(Math.round(selectedBooking.amount * 1.1))}</strong></div></div>{paymentState === 'failed' && <div className="error-banner"><CircleAlert size={18} /><div><strong>Payment failed</strong><span>Nothing was charged. Try the mock payment again.</span></div></div>}<div className="mock-note"><CreditCard size={17} /><span>Mock payment only · no real money is charged</span></div><button className="failure-link" onClick={() => payNow(true)}>Simulate payment failure</button></div><div className="sticky-cta"><div><small>Total</small><strong>{formatCurrency(Math.round(selectedBooking.amount * 1.1))}</strong></div><button className="primary-btn" onClick={() => payNow(false)}><LockKeyhole size={16} /> Pay securely</button></div></div>;
+  }
+
+  function ConfirmationScreen() {
+    return <div className="screen scroll-screen confirmation-screen"><DetailHeader title="Booking confirmed" onBack={() => navigate('bookings')} /><div className="success-hero"><div className="success-orbit"><Check size={32} /></div><span>YOU'RE ALL SET</span><h1>Ride booked.</h1><p>Show this token at the rental office for a fast pickup.</p></div><div className="token-card"><div className="token-top"><span>BOOKING TOKEN</span><strong>{selectedBooking.token}</strong></div><FakeQR token={selectedBooking.token} /><div className="qr-caption"><QrCode size={16} /> Scan at handover</div></div><div className="confirmation-details"><div className="confirm-ride"><img src={vehicleArt(selectedVehicle.type, selectedVehicle.color)} alt="" /><div><strong>{selectedBooking.vehicleName}</strong><span>{selectedBooking.operator}</span></div><StatusBadge status="Confirmed" /></div><div className="confirm-grid"><div><small>Pickup</small><strong>{selectedBooking.start}</strong></div><div><small>Return</small><strong>{selectedBooking.end}</strong></div><div><small>Paid</small><strong>{formatCurrency(Math.round(selectedBooking.amount * 1.1))}</strong></div><div><small>Booking ID</small><strong>{selectedBooking.id}</strong></div></div></div><div className="instruction-card"><Info size={17} /><span>Bring your original driving licence and arrive 10 minutes before pickup.</span></div><button className="primary-btn full-btn" onClick={() => navigate('bookings')}>View my bookings <ArrowRight size={17} /></button><button className="secondary-btn full-btn" onClick={() => navigate('explore')}>Keep exploring</button></div>;
+  }
+
+  function TravelerBookings() {
+    return <div className="screen scroll-screen"><AppHeader title="My bookings" subtitle="Your rides, all in one place" action={<button className="icon-btn"><Bell size={19} /></button>} /><div className="segmented"><button className="active">All <span>{bookings.length}</span></button><button>Upcoming</button><button>Past</button></div><div className="booking-stack">{bookings.map((booking) => <BookingCard key={booking.id} booking={booking} onClick={() => { setSelectedBooking(booking); const vehicle = vehicles.find((v) => v.id === booking.vehicleId); if (vehicle) setSelectedVehicle(vehicle); navigate('bookingDetail'); }} />)}</div><EmptyHint icon={CalendarDays} title="Planning another ride?" text="Verified scooters, bikes and cars are waiting in Mount Abu." action="Explore vehicles" onClick={() => navigate('explore')} /></div>;
+  }
+
+  function BookingCard({ booking, onClick }: { booking: Booking; onClick: () => void }) {
+    const vehicle = vehicles.find((v) => v.id === booking.vehicleId) ?? vehicles[0];
+    return <button className="booking-card" onClick={onClick}><div className="booking-card-top"><span className="booking-id">{booking.id}</span><StatusBadge status={booking.status === 'CONFIRMED' ? 'Confirmed' : booking.status === 'ACTIVE' ? 'Active' : booking.status === 'COMPLETED' ? 'Completed' : booking.status === 'CANCELLED' ? 'Cancelled' : booking.status} /></div><div className="booking-vehicle"><img src={vehicleArt(vehicle.type, vehicle.color)} alt="" /><div><h3>{booking.vehicleName}</h3><p>{booking.operator}</p></div><ChevronRight size={18} /></div><div className="booking-times"><div><CalendarDays size={14} /><span>{booking.start}</span></div><ArrowRight size={14} color="#adb5b0" /><div><Clock3 size={14} /><span>{booking.end}</span></div></div>{booking.status === 'COMPLETED' && <div className="review-line"><span>{[1, 2, 3, 4, 5].map((i) => <Star key={i} size={13} fill={i <= (booking.rating ?? 0) ? colors.orange : 'none'} color={colors.orange} />)}</span><small>Thank you for riding with us</small></div>}</button>;
+  }
+
+  function BookingDetail() {
+    const isCompleted = selectedBooking.status === 'COMPLETED';
+    return <div className="screen scroll-screen detail-screen"><DetailHeader title="Booking details" onBack={() => navigate('bookings')} /><div className="detail-booking-hero"><div className="booking-card-top"><span className="booking-id">{selectedBooking.id}</span><StatusBadge status={selectedBooking.status === 'ACTIVE' ? 'Active' : selectedBooking.status === 'CONFIRMED' ? 'Confirmed' : selectedBooking.status} /></div><img src={vehicleArt(selectedVehicle.type, selectedVehicle.color)} alt="" /><h1>{selectedBooking.vehicleName}</h1><p>{selectedBooking.operator} · Mount Abu</p></div><div className="detail-content"><section className="timeline-section"><h3>Booking timeline</h3><Timeline status={selectedBooking.status} /></section><section className="booking-info-card"><InfoLine icon={CalendarDays} label="Rental time" value={`${selectedBooking.start} – ${selectedBooking.end}`} /><InfoLine icon={WalletCards} label="Payment" value={selectedBooking.payment === 'SUCCESS' ? 'Paid · mock payment' : selectedBooking.payment} green /><InfoLine icon={FileCheck2} label="KYC" value={selectedBooking.kyc === 'VERIFIED' ? 'Verified · masked ID' : selectedBooking.kyc} green /></section>{selectedBooking.token !== '—' && <div className="token-inline"><div><span>Pickup token</span><strong>{selectedBooking.token}</strong><small>Show token or QR at handover</small></div><FakeQR token={selectedBooking.token} small /></div>}{isCompleted && !feedbackSubmitted && <button className="feedback-prompt" onClick={() => navigate('feedback')}><div className="prompt-icon"><Star size={18} /></div><div><strong>How was your ride?</strong><span>Leave a review for {selectedBooking.vehicleName}</span></div><ChevronRight size={18} /></button>}</div>{selectedBooking.status === 'CONFIRMED' && <div className="sticky-cta"><button className="secondary-btn" onClick={() => setModal('cancel')}>Cancel booking</button><button className="primary-btn" onClick={() => notify('Reminder saved for pickup')}>Add reminder <Bell size={16} /></button></div>}{selectedBooking.status === 'ACTIVE' && <div className="sticky-cta"><button className="primary-btn full-btn" onClick={() => navigate('active')}>Open active rental <Navigation size={16} /></button></div>}</div>;
+  }
+
+  function TravelerActive() {
+    return <div className="screen scroll-screen active-screen"><AppHeader title="Active rental" subtitle={activeRental ? 'Live support is on standby' : 'No active rental'} action={<button className="icon-btn"><Headphones size={19} /></button>} />{activeRental ? <><div className="active-status"><span className="pulse-dot" /> RENTAL ACTIVE <span className="active-time">Started 10:30 AM</span></div><div className="active-vehicle-card"><img src={vehicleArt(liveVehicle.type, liveVehicle.color)} alt="" /><div className="active-vehicle-info"><div><h2>{liveVehicle.name}</h2><p><ShieldCheck size={13} /> Verified by RideSathi</p></div><span className="plate">RJ 38 AB 2048</span></div></div><MapCard consent={locationConsent} onConsent={() => { setLocationConsent(true); notify('Live location sharing enabled'); }} /><div className="location-banner"><div className="location-icon"><Navigation size={17} /></div><div><strong>{locationConsent ? 'Location sharing is on' : 'Share your location for safer rides'}</strong><span>{locationConsent ? 'Operator can see your location during this rental.' : 'Only active rental support can access it.'}</span></div>{!locationConsent && <button onClick={() => { setLocationConsent(true); notify('Live location sharing enabled'); }}>Allow</button>}</div><button className="simulate-location" onClick={() => notify('Location simulated around Mount Abu · 24.5929, 72.7161')}><RefreshCw size={13} /> Simulate location around Mount Abu</button><div className="active-details-grid"><InfoTile icon={Clock3} label="Started" value="Today, 10:30 AM" /><InfoTile icon={MapPin} label="Pickup" value="Nakki Lake office" /></div><section className="support-card"><div className="support-icon"><Headphones size={19} /></div><div><strong>Need a hand?</strong><span>RideSathi support is available 24/7</span></div><button className="icon-btn light"><Phone size={17} /></button></section><button className="return-instructions" onClick={() => notify('Return instructions opened')}><div><PackageCheck size={18} color={colors.green} /><span><strong>Return instructions</strong><small>See where and how to return your vehicle</small></span></div><ChevronRight size={18} /></button><button className="sos-button" onClick={() => setModal('sos')}><div className="sos-symbol"><ShieldAlert size={22} /></div><div><strong>Emergency SOS</strong><span>{sosRaised ? 'Alert sent · support is responding' : 'Tap only in an emergency'}</span></div><ChevronRight size={19} /></button></> : <EmptyHint icon={Navigation} title="No active rental" text="When your operator verifies the token, your live rental will appear here." action="View my bookings" onClick={() => navigate('bookings')} />}</div>;
+  }
+
+  function TravelerProfile() {
+    return <div className="screen scroll-screen"><AppHeader title="Profile" subtitle="Your RideSathi account" action={<button className="icon-btn" onClick={() => setModal('logout')}><MoreHorizontal size={20} /></button>} /><div className="profile-card"><div className="profile-avatar">AM</div><div><h2>Aarav Mehta</h2><p>traveler@demo.com</p><span className="profile-verified"><ShieldCheck size={14} /> KYC verified</span></div><button className="icon-btn light"><Pencil size={16} /></button></div><div className="profile-stats"><div><strong>3</strong><span>Rides</span></div><div><strong>4.9</strong><span>My rating</span></div><div><strong>Since '24</strong><span>Member</span></div></div><section className="profile-section"><h3>Account</h3><ProfileRow icon={UserCheck} title="Personal details" subtitle="Name, phone & emergency contact" /><ProfileRow icon={ShieldCheck} title="KYC & documents" subtitle="Verified · masked ID •••• 6218" onClick={() => navigate('kyc')} /><ProfileRow icon={Bell} title="Notifications" subtitle="In-app alerts enabled" /></section><section className="profile-section"><h3>Safety & support</h3><ProfileRow icon={LifeBuoy} title="Safety centre" subtitle="SOS, policies & ride safety" /><ProfileRow icon={MessageCircle} title="Help & support" subtitle="We are here 24/7" /></section><button className="logout-btn" onClick={() => setModal('logout')}><LogOut size={17} /> Switch demo account</button><p className="app-version">RideSathi MVP · Mount Abu pilot</p></div>;
+  }
+
+  function OperatorApp() {
+    const tabs = [
+      { key: 'dashboard' as Screen, label: 'Dashboard', icon: Home },
+      { key: 'operatorBookings' as Screen, label: 'Bookings', icon: ReceiptText },
+      { key: 'vehicles' as Screen, label: 'Vehicles', icon: Bike },
+      { key: 'activeRentals' as Screen, label: 'Active', icon: Navigation },
+      { key: 'alerts' as Screen, label: 'Alerts', icon: ShieldAlert },
+    ];
+    const isHome = ['dashboard', 'operatorBookings', 'vehicles', 'activeRentals', 'alerts'].includes(screen);
+    return <>{screen === 'dashboard' && <OperatorDashboard />}{screen === 'operatorBookings' && <OperatorBookings />}{screen === 'vehicles' && <OperatorVehicles />}{screen === 'vehicleForm' && <VehicleForm />}{screen === 'operatorBookingDetail' && <OperatorBookingDetail />}{screen === 'handover' && <HandoverScreen />}{screen === 'activeRentals' && <OperatorActiveRentals />}{screen === 'activeRentalDetail' && <OperatorActiveRentalDetail />}{screen === 'return' && <ReturnScreen />}{screen === 'alerts' && <OperatorAlerts />}{screen === 'reviews' && <ReviewsScreen />}{isHome && <BottomTabs tabs={tabs} active={screen} onChange={navigate} />}</>;
+  }
+
+  function OperatorDashboard() {
+    return <div className="screen scroll-screen"><AppHeader title="Good morning, Raj" subtitle="Abu Hill Rentals · Mount Abu" action={<button className="icon-btn" onClick={() => setModal('logout')}><MoreHorizontal size={20} /></button>} /><div className="operator-status"><span className="pulse-dot" /> Operator account active <ChevronRight size={15} /></div><div className="metric-grid"><MetricTile label="Vehicles" value="7" trend="6 active" icon={Bike} /><MetricTile label="Active rentals" value="1" trend="Live now" icon={Navigation} blue /><MetricTile label="Upcoming" value="4" trend="This week" icon={CalendarDays} orange /><MetricTile label="Avg. rating" value="4.8" trend="76 reviews" icon={Star} /></div><div className="section-head"><div><h2>Quick actions</h2><p>Keep your fleet moving</p></div></div><div className="quick-actions"><QuickAction icon={Plus} label="Add vehicle" onClick={() => navigate('vehicleForm')} /><QuickAction icon={ReceiptText} label="Bookings" onClick={() => navigate('operatorBookings')} /><QuickAction icon={Navigation} label="Live rentals" onClick={() => navigate('activeRentals')} /><QuickAction icon={MessageCircle} label="Reviews" onClick={() => navigate('reviews')} /></div><div className="section-head"><div><h2>Needs your attention</h2><p>Stay on top of today's handovers</p></div><button className="text-btn" onClick={() => navigate('operatorBookings')}>See all <ArrowRight size={14} /></button></div><button className="operator-booking-highlight" onClick={() => { setSelectedBooking(bookings[0]); navigate('operatorBookingDetail'); }}><div className="attention-label"><span className="orange-dot" /> NEXT HANDOVER <span>Today · 9:00 AM</span></div><div className="operator-highlight-main"><div className="operator-booking-avatar">PS</div><div><h3>Priya Shah</h3><p>Suzuki Access 125 · {bookings[0].id}</p></div><ChevronRight size={19} /></div><div className="attention-footer"><span><ShieldCheck size={14} /> KYC verified</span><span><WalletCards size={14} /> Paid</span><strong>Verify token</strong></div></button><button className="alert-banner" onClick={() => navigate('alerts')}><div className="alert-icon"><ShieldAlert size={18} /></div><div><strong>1 SOS alert needs attention</strong><span>Aarav Mehta · Honda Activa 6G · just now</span></div><ChevronRight size={17} /></button></div>;
+  }
+
+  function OperatorBookings() {
+    const filtered = operatorTab === 'active' ? bookings.filter((b) => b.status === 'ACTIVE') : operatorTab === 'upcoming' ? bookings.filter((b) => b.status === 'CONFIRMED') : bookings;
+    return <div className="screen scroll-screen"><AppHeader title="Bookings" subtitle="Manage every handover" action={<button className="icon-btn"><Search size={19} /></button>} /><div className="segmented"><button className={operatorTab === 'all' ? 'active' : ''} onClick={() => setOperatorTab('all')}>All <span>{bookings.length}</span></button><button className={operatorTab === 'upcoming' ? 'active' : ''} onClick={() => setOperatorTab('upcoming')}>Upcoming</button><button className={operatorTab === 'active' ? 'active' : ''} onClick={() => setOperatorTab('active')}>Active</button></div><div className="operator-list">{filtered.map((booking) => <OperatorBookingRow key={booking.id} booking={booking} onClick={() => { setSelectedBooking(booking); navigate('operatorBookingDetail'); }} />)}</div></div>;
+  }
+
+  function OperatorBookingRow({ booking, onClick }: { booking: Booking; onClick: () => void }) {
+    const vehicle = vehicles.find((v) => v.id === booking.vehicleId) ?? vehicles[0];
+    return <button className="operator-booking-row" onClick={onClick}><div className="row-avatar">{booking.id.slice(-2)}</div><div className="operator-row-copy"><div className="row-title"><strong>{booking.id}</strong><StatusBadge status={booking.status === 'ACTIVE' ? 'Active' : booking.status === 'CONFIRMED' ? 'Confirmed' : booking.status} /></div><h3>{booking.vehicleName}</h3><p>{booking.start} → {booking.end}</p><div className="row-tags"><span><UserCheck size={12} /> {booking.kyc === 'VERIFIED' ? 'KYC verified' : 'KYC pending'}</span><span><WalletCards size={12} /> {booking.payment === 'SUCCESS' ? 'Paid' : 'Payment pending'}</span></div></div><ChevronRight size={18} /></button>;
+  }
+
+  function OperatorBookingDetail() {
+    const isActiveBooking = selectedBooking.status === 'ACTIVE';
+    return <div className="screen scroll-screen detail-screen"><DetailHeader title="Booking review" onBack={() => navigate('operatorBookings')} /><div className="operator-detail-header"><div className="big-avatar">PS</div><div><span className="booking-id">{selectedBooking.id}</span><h1>Priya Shah</h1><p>+91 98••• 43210</p></div><StatusBadge status={isActiveBooking ? 'Active' : 'Confirmed'} /></div><div className="operator-detail-body"><section className="booking-info-card"><InfoLine icon={Bike} label="Vehicle" value={selectedBooking.vehicleName} /><InfoLine icon={CalendarDays} label="Rental time" value={`${selectedBooking.start} – ${selectedBooking.end}`} /><InfoLine icon={WalletCards} label="Payment" value="Paid · mock payment" green /><InfoLine icon={FileCheck2} label="KYC status" value="Verified · masked ID •••• 6218" green /></section><div className="token-operator-card"><div><span>BOOKING TOKEN</span><strong>{selectedBooking.token}</strong><small>Ask traveler to show this token or QR</small></div><FakeQR token={selectedBooking.token} small /></div><div className="operator-note"><ShieldCheck size={17} /><span>Both vehicle documents are verified. Check original driving licence at pickup.</span></div></div>{!isActiveBooking ? <div className="sticky-cta"><button className="secondary-btn" onClick={() => notify('Booking rejected · traveler notified')}>Reject</button><button className="primary-btn" onClick={() => navigate('handover')}>Start handover <ArrowRight size={17} /></button></div> : <div className="sticky-cta"><button className="primary-btn full-btn" onClick={() => setModal('end')}>End rental <PackageCheck size={16} /></button></div>}</div>;
+  }
+
+  function HandoverScreen() {
+    const [token, setToken] = useState('');
+    const [tokenError, setTokenError] = useState(false);
+    const validate = () => {
+      if (token.replace(/\s/g, '').toUpperCase() !== selectedBooking.token.replace(/\s/g, '').toUpperCase()) {
+        setTokenError(true);
+        return;
+      }
+      setTokenError(false);
+      setModal('start');
+    };
+    return <div className="screen scroll-screen detail-screen"><DetailHeader title="Token handover" onBack={() => navigate('operatorBookingDetail')} /><div className="handover-hero"><div className="scan-orbit"><QrCode size={31} /></div><h1>Verify before pickup</h1><p>Ask the traveler to show their booking QR or token.</p></div><button className="scanner-box" onClick={() => { setToken(selectedBooking.token); notify('Demo scanner filled the token'); }}><div className="scan-corners"><i /><i /><i /><i /></div><Camera size={23} /><strong>Scan booking QR</strong><span>Camera access is used only for this handover</span></button><div className="or-divider"><span>or enter manually</span></div><div className="manual-token"><label>Booking token</label><div className={tokenError ? 'token-input error' : 'token-input'}><KeyRound size={18} /><input value={token} onChange={(e) => { setToken(e.target.value.toUpperCase()); setTokenError(false); }} placeholder="e.g. RS-7K4M2" /><button onClick={() => setToken(selectedBooking.token)}><PasteIcon /></button></div>{tokenError && <span className="field-error"><CircleAlert size={14} /> Token invalid or already used. Try again.</span>}</div><div className="handover-checks"><div><CheckCircle2 size={17} /> Booking is confirmed</div><div><CheckCircle2 size={17} /> Payment received</div><div><CheckCircle2 size={17} /> KYC is verified</div></div><button className="primary-btn full-btn" onClick={validate}>Validate token <ArrowRight size={17} /></button></div>;
+  }
+
+  function OperatorVehicles() {
+    return <div className="screen scroll-screen"><AppHeader title="My vehicles" subtitle="7 vehicles · 6 active" action={<button className="icon-btn" onClick={() => navigate('vehicleForm')}><Plus size={20} /></button>} /><div className="vehicle-list operator-vehicle-list">{vehicles.map((vehicle) => <div key={vehicle.id} className="operator-vehicle-card"><img src={vehicleArt(vehicle.type, vehicle.color)} alt="" /><div className="operator-vehicle-copy"><div className="card-title-row"><div><h3>{vehicle.name}</h3><p>{vehicle.type} · {vehicle.id === 'v8' ? 'Submitted today' : 'RJ 38 AB 2048'}</p></div><StatusBadge status={vehicle.status === 'AVAILABLE' ? 'Available' : vehicle.status === 'RENTED' ? 'Rented' : vehicle.status === 'PENDING_INSPECTION' ? 'Pending inspection' : 'Reserved'} /></div><div className="operator-vehicle-bottom"><strong>{formatCurrency(vehicle.price)} <small>/ day</small></strong><button className="edit-link" onClick={() => { setFormVehicle({ type: vehicle.type, make: vehicle.name.split(' ')[0], model: vehicle.name.split(' ').slice(1).join(' '), reg: 'RJ 38 AB 2048', price: String(vehicle.price), fuel: vehicle.fuel, seats: String(vehicle.seats), notes: vehicle.condition }); navigate('vehicleForm'); }}><Pencil size={14} /> Edit</button><label className="toggle"><input type="checkbox" defaultChecked={vehicle.status !== 'BLOCKED'} /><span /></label></div></div></div>)}</div><button className="outline-dashed" onClick={() => navigate('vehicleForm')}><Plus size={18} /> Add another vehicle</button></div>;
+  }
+
+  function VehicleForm() {
+    return <div className="screen scroll-screen detail-screen"><DetailHeader title={formVehicle.make ? 'Edit vehicle' : 'Add a vehicle'} onBack={() => navigate('vehicles')} /><div className="form-content vehicle-form"><div className="upload-photo"><div><ImagePlus size={23} /><span>Add vehicle photos</span><small>Clear photos help travelers choose</small></div><button><Upload size={16} /> Upload</button></div><div className="form-section"><h3>Vehicle details</h3><label className="field-label">Vehicle type<div className="select-pill"><Bike size={17} /><select value={formVehicle.type} onChange={(e) => setFormVehicle({ ...formVehicle, type: e.target.value })}><option>Scooter</option><option>Bike</option><option>Car</option><option>Jeep</option></select><ChevronDown size={15} /></div></label><div className="field-row"><Field label="Make" value={formVehicle.make} onChange={(v) => setFormVehicle({ ...formVehicle, make: v })} placeholder="e.g. Honda" /><Field label="Model" value={formVehicle.model} onChange={(v) => setFormVehicle({ ...formVehicle, model: v })} placeholder="e.g. Activa 6G" /></div><Field label="Registration number" value={formVehicle.reg} onChange={(v) => setFormVehicle({ ...formVehicle, reg: v })} placeholder="RJ 38 AB 0000" /><div className="field-row"><Field label="Price per day" value={formVehicle.price} onChange={(v) => setFormVehicle({ ...formVehicle, price: v })} placeholder="₹ 499" /><Field label="Seats" value={formVehicle.seats} onChange={(v) => setFormVehicle({ ...formVehicle, seats: v })} /></div><label className="field-label">Fuel type<div className="select-pill"><Fuel size={17} /><select value={formVehicle.fuel} onChange={(e) => setFormVehicle({ ...formVehicle, fuel: e.target.value })}><option>Petrol</option><option>Diesel</option><option>Electric</option></select><ChevronDown size={15} /></div></label><label className="field-label">Condition notes<textarea value={formVehicle.notes} onChange={(e) => setFormVehicle({ ...formVehicle, notes: e.target.value })} placeholder="Tell travelers about the condition, included items…" /></label></div><div className="form-section"><h3>Documents</h3><CheckRow label="RC available" /><CheckRow label="Insurance available" /><CheckRow label="Rental permit / eligibility available" /></div><div className="verification-note"><ShieldCheck size={18} /><div><strong>Verification before listing</strong><span>Our admin team checks documents within 24 hours.</span></div></div></div><div className="sticky-cta"><button className="primary-btn full-btn" onClick={() => { notify('Vehicle submitted for admin verification'); navigate('vehicles'); }}>Submit for verification <ArrowRight size={17} /></button></div></div>;
+  }
+
+  function OperatorActiveRentals() {
+    return <div className="screen scroll-screen"><AppHeader title="Active rentals" subtitle="1 rental live right now" action={<button className="icon-btn"><ListFilter size={19} /></button>} /><div className="operator-map"><MapCanvas markerCount={1} /><div className="map-overlay-chip"><span className="pulse-dot" /> 1 live location</div></div><div className="section-head"><div><h2>On the road</h2><p>Live location is consent-based</p></div><button className="text-btn" onClick={() => notify('Locations refreshed')}><RefreshCw size={14} /> Refresh</button></div>{activeRental ? <button className="active-rental-row" onClick={() => navigate('activeRentalDetail')}><div className="active-rental-thumb"><img src={vehicleArt('Scooter', '#d6ebe1')} alt="" /><span className="pulse-dot" /></div><div><div className="row-title"><strong>Aarav Mehta</strong><StatusBadge status="Active" /></div><h3>Honda Activa 6G</h3><p><Clock3 size={13} /> Started today at 10:30 AM</p><span className="live-copy"><Navigation size={12} /> Location shared · 42 sec ago</span></div><ChevronRight size={18} /></button> : <EmptyHint icon={Navigation} title="No active rentals" text="Started rentals will appear here with consent-based location." action="View bookings" onClick={() => navigate('operatorBookings')} />}</div>;
+  }
+
+  function OperatorActiveRentalDetail() {
+    return <div className="screen scroll-screen detail-screen"><DetailHeader title="Live rental" onBack={() => navigate('activeRentals')} /><div className="live-status-head"><span className="pulse-dot" /> LIVE LOCATION <span>42 sec ago</span></div><MapCard consent onConsent={() => notify('Location refreshed')} /><div className="detail-content"><div className="renter-card"><div className="big-avatar">AM</div><div><h2>Aarav Mehta</h2><p><Phone size={13} /> +91 98••• 43210</p></div><button className="icon-btn light"><Phone size={17} /></button></div><section className="booking-info-card"><InfoLine icon={Bike} label="Vehicle" value="Honda Activa 6G · RJ 38 AB 2048" /><InfoLine icon={KeyRound} label="Token" value="RS-7392" /><InfoLine icon={Clock3} label="Started" value="Today · 10:30 AM" /><InfoLine icon={ShieldAlert} label="SOS status" value={sosRaised ? 'Raised · responding' : 'No active alert'} green={!sosRaised} /></section><button className="sos-mini-banner" onClick={() => navigate('alerts')}><ShieldAlert size={17} /><span><strong>{sosRaised ? 'SOS alert raised' : 'Safety alerts'}</strong><small>{sosRaised ? 'Aarav needs support now' : 'Monitor alerts for this rental'}</small></span><ChevronRight size={17} /></button></div><div className="sticky-cta"><button className="primary-btn full-btn" onClick={() => setModal('end')}>End rental & inspect <PackageCheck size={17} /></button></div></div>;
+  }
+
+  function ReturnScreen() {
+    const [returnToken, setReturnToken] = useState('');
+    const [returnVerified, setReturnVerified] = useState(false);
+    const [returnError, setReturnError] = useState(false);
+    const verifyReturnToken = () => {
+      if (returnToken.replace(/\s/g, '').toUpperCase() !== 'RS-7392') {
+        setReturnError(true);
+        return;
+      }
+      setReturnError(false);
+      setReturnVerified(true);
+      notify('Return token verified');
+    };
+    return <div className="screen scroll-screen detail-screen"><DetailHeader title="Close rental" onBack={() => navigate('activeRentalDetail')} /><div className="return-intro"><div className="return-icon"><PackageCheck size={25} /></div><div><h1>Complete the return</h1><p>Inspect the vehicle, add notes, then close this rental.</p></div></div><div className={`return-token ${returnError ? 'has-error' : ''}`}><div><span>BOOKING TOKEN</span><div className="return-token-entry"><KeyRound size={14} /><input value={returnToken} onChange={(e) => { setReturnToken(e.target.value.toUpperCase()); setReturnError(false); }} placeholder="RS-7392" /></div></div><button onClick={() => { setReturnToken('RS-7392'); setReturnVerified(true); notify('Demo scanner filled the token'); }}><Camera size={15} /> Scan QR</button><button className={returnVerified ? 'verified-return' : ''} onClick={verifyReturnToken}>{returnVerified ? <CheckCircle2 size={15} /> : <Check size={15} />} {returnVerified ? 'Verified' : 'Verify'}</button></div>{returnError && <span className="field-error return-error"><CircleAlert size={14} /> Token invalid or already used.</span>}<div className="form-content"><label className="field-label">Return notes<textarea value={returnNotes} onChange={(e) => setReturnNotes(e.target.value)} placeholder="Any scratches, fuel level or other notes…" /></label><h3 className="form-subtitle">Vehicle condition</h3><div className="condition-options"><button className="active"><CheckCircle2 size={16} /> Good condition</button><button><CircleAlert size={16} /> Needs inspection</button><button><WrenchIcon /> Maintenance needed</button></div><UploadField label="Add return photos (optional)" /></div><div className="sticky-cta"><button className="primary-btn full-btn" onClick={() => returnVerified ? setModal('return') : notify('Verify the return token first')}>Close rental <CheckCircle2 size={17} /></button></div></div>;
+  }
+
+  function OperatorAlerts() {
+    return <div className="screen scroll-screen"><AppHeader title="SOS alerts" subtitle="Keep every rider safe" action={<button className="icon-btn"><Bell size={19} /></button>} /><div className="sos-summary"><div className="sos-summary-icon"><ShieldAlert size={21} /></div><div><strong>{alerts.filter((a) => a.status === 'RAISED').length} open alert</strong><span>Respond quickly to keep riders safe</span></div></div><div className="alert-list">{alerts.map((alert) => <div key={alert.id} className={`sos-alert-card ${alert.status === 'RAISED' ? 'urgent' : ''}`}><div className="alert-card-top"><span className="alert-id">{alert.id}</span><SOSBadge status={alert.status} /><MoreHorizontal size={17} /></div><div className="alert-person"><div className="big-avatar red-avatar">{alert.traveler.split(' ').map((n) => n[0]).join('')}</div><div><h3>{alert.traveler}</h3><p>{alert.vehicle} · {alert.time}</p></div></div><div className="alert-location"><MapPin size={15} /><span>{alert.location}</span><button onClick={() => notify('Location preview centered on Mount Abu')}>View map</button></div>{alert.status === 'RAISED' && <div className="alert-actions"><button className="secondary-btn" onClick={() => { setAlerts((all) => all.map((a) => a.id === alert.id ? { ...a, status: 'ACKNOWLEDGED' } : a)); notify('Alert acknowledged'); }}>Acknowledge</button><button className="primary-btn" onClick={() => { setAlerts((all) => all.map((a) => a.id === alert.id ? { ...a, status: 'RESOLVED' } : a)); notify('Alert marked resolved'); }}>Resolve</button></div>}</div>)}</div></div>;
+  }
+
+  function ReviewsScreen() {
+    return <div className="screen scroll-screen"><AppHeader title="Reviews" subtitle="What riders say about you" action={<button className="icon-btn"><ListFilter size={19} /></button>} /><div className="rating-overview"><div><strong>4.8</strong><div className="stars">★★★★★</div><span>76 reviews</span></div><div className="rating-bars"><RatingBar label="5" value="88%" /><RatingBar label="4" value="8%" /><RatingBar label="3" value="3%" /><RatingBar label="2" value="1%" /></div></div><div className="review-list"><ReviewCard initials="RK" name="Rohan Kapoor" rating={5} date="12 Oct 2024" vehicle="Honda Activa 6G" text="Super smooth pickup and very helpful team. The QR handover saved a lot of time." /><ReviewCard initials="NS" name="Nisha Shah" rating={5} date="08 Oct 2024" vehicle="Bajaj Pulsar 150" text="Bike was clean and ready exactly on time. Loved exploring the sunset point." /><ReviewCard initials="AT" name="Aditi T." rating={4} date="28 Sep 2024" vehicle="Maruti WagonR" text="Good car for the hills, would rent again." /></div></div>;
+  }
+
+  function AdminApp() {
+    const tabs = [
+      { key: 'approvals' as Screen, label: 'Approvals', icon: FileCheck2 },
+      { key: 'adminBookings' as Screen, label: 'Bookings', icon: ReceiptText },
+      { key: 'adminSOS' as Screen, label: 'SOS alerts', icon: ShieldAlert },
+      { key: 'metrics' as Screen, label: 'Metrics', icon: Gauge },
+    ];
+    const isHome = ['approvals', 'adminBookings', 'adminSOS', 'metrics'].includes(screen);
+    return <>{screen === 'approvals' && <AdminApprovals />}{screen === 'adminBookings' && <AdminBookings />}{screen === 'adminSOS' && <AdminSOS />}{screen === 'metrics' && <AdminMetrics />}{isHome && <BottomTabs tabs={tabs} active={screen} onChange={navigate} />}</>;
+  }
+
+  function AdminApprovals() {
+    return <div className="screen scroll-screen"><AppHeader title="Good morning, Admin" subtitle="RideSathi control centre" action={<button className="icon-btn" onClick={() => setModal('logout')}><MoreHorizontal size={20} /></button>} /><div className="admin-banner"><div className="admin-shield"><ShieldCheck size={21} /></div><div><strong>Network health is good</strong><span>Mount Abu pilot · Last synced just now</span></div><RefreshCw size={16} /></div><div className="approval-counts"><div><strong>3</strong><span>Pending actions</span></div><div><strong>12</strong><span>Approved operators</span></div><div><strong>48</strong><span>Active vehicles</span></div></div><div className="section-head"><div><h2>Review queue</h2><p>Approve partners and vehicles</p></div><button className="text-btn" onClick={() => notify('Queue refreshed')}><RefreshCw size={14} /></button></div><div className="admin-tabs"><button className={adminTab === 'operators' ? 'active' : ''} onClick={() => setAdminTab('operators')}>Operators <span>2</span></button><button className={adminTab === 'vehicles' ? 'active' : ''} onClick={() => setAdminTab('vehicles')}>Vehicles <span>1</span></button></div>{adminTab === 'operators' ? <div className="approval-list"><ApprovalCard initials="SR" title="Sharma Rides" subtitle="Nakki Lake Road · Submitted 2h ago" type="Operator" approve={() => approve('Sharma Rides')} reject={() => reject('Sharma Rides')} /><ApprovalCard initials="RD" title="Rajasthan Drive Co." subtitle="Delwara Road · Submitted yesterday" type="Operator" approve={() => approve('Rajasthan Drive Co.')} reject={() => reject('Rajasthan Drive Co.')} /></div> : <div className="approval-list"><ApprovalCard initials="HD" title="Honda Dio" subtitle="Mount Abu Riders · ₹479/day" type="Vehicle · Documents uploaded" approve={() => approve('Honda Dio')} reject={() => reject('Honda Dio')} /></div>}<button className="alert-banner" onClick={() => navigate('adminSOS')}><div className="alert-icon"><ShieldAlert size={18} /></div><div><strong>1 SOS alert is open</strong><span>Review the active safety incident</span></div><ChevronRight size={17} /></button></div>;
+  }
+
+  function AdminBookings() {
+    return <div className="screen scroll-screen"><AppHeader title="All bookings" subtitle="Live network activity" action={<button className="icon-btn"><ListFilter size={19} /></button>} /><div className="admin-booking-metrics"><MetricTile label="Today" value="18" trend="+12% vs yesterday" icon={CalendarDays} /><MetricTile label="Active now" value="6" trend="Across Mount Abu" icon={Navigation} blue /></div><div className="segmented"><button className="active">All <span>24</span></button><button>Active</button><button>Completed</button></div><div className="booking-stack admin-booking-stack">{bookings.map((booking) => <BookingCard key={booking.id} booking={booking} onClick={() => notify(`${booking.id} · ${booking.status}`)} />)}</div></div>;
+  }
+
+  function AdminSOS() {
+    return <div className="screen scroll-screen"><AppHeader title="SOS alerts" subtitle="Safety response centre" action={<button className="icon-btn"><RefreshCw size={19} /></button>} /><div className="admin-sos-hero"><div className="sos-summary-icon"><ShieldAlert size={22} /></div><div><strong>1 needs attention</strong><span>Operators and support are notified immediately.</span></div></div><div className="alert-list">{alerts.map((alert) => <div key={alert.id} className={`sos-alert-card ${alert.status === 'RAISED' ? 'urgent' : ''}`}><div className="alert-card-top"><span className="alert-id">{alert.id}</span><SOSBadge status={alert.status} /><span className="admin-time">{alert.time}</span></div><div className="alert-person"><div className="big-avatar red-avatar">{alert.traveler.split(' ').map((n) => n[0]).join('')}</div><div><h3>{alert.traveler}</h3><p>{alert.vehicle}</p></div></div><div className="alert-location"><MapPin size={15} /><span>{alert.location}</span></div><button className="map-preview"><MapCanvas markerCount={1} /><span><Navigation size={14} /> Open location preview</span></button></div>)}</div></div>;
+  }
+
+  function AdminMetrics() {
+    return <div className="screen scroll-screen"><AppHeader title="Network metrics" subtitle="Mount Abu · 30 day overview" action={<button className="icon-btn"><MoreHorizontal size={20} /></button>} /><div className="metrics-hero"><div><span>Gross booking value</span><strong>₹3,84,920</strong><small><span className="up-arrow">↗</span> 18.4% this month</small></div><div className="sparkline"><i /><i /><i /><i /><i /><i /><i /></div></div><div className="admin-stat-grid"><MetricTile label="Operators" value="14" trend="12 approved" icon={Users} /><MetricTile label="Vehicles" value="56" trend="48 active" icon={Bike} /><MetricTile label="Bookings" value="184" trend="+18.4%" icon={ReceiptText} /><MetricTile label="Completed" value="162" trend="88% success" icon={CheckCircle2} /><MetricTile label="SOS raised" value="4" trend="3 resolved" icon={ShieldAlert} red /><MetricTile label="Avg. rating" value="4.8" trend="1,240 rides" icon={Star} /></div><section className="metrics-section"><div className="section-head"><div><h2>Booking activity</h2><p>Last 7 days</p></div><span className="legend-dot">Confirmed</span></div><div className="bar-chart"><i style={{ height: '42%' }} /><i style={{ height: '58%' }} /><i style={{ height: '52%' }} /><i style={{ height: '76%' }} /><i style={{ height: '64%' }} /><i style={{ height: '92%' }} /><i style={{ height: '70%' }} /></div><div className="chart-labels"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div></section></div>;
+  }
+}
+
+function LoginScreen({ email, password, setEmail, setPassword, role, setRole, onLogin, onDemo }: { email: string; password: string; setEmail: (v: string) => void; setPassword: (v: string) => void; role: Role; setRole: (r: Role) => void; onLogin: () => void; onDemo: (r: Role) => void }) {
+  return <div className="login-screen"><div className="login-status"><span>9:41</span><span className="status-icons"><span className="signal" /><span className="wifi" /><span className="battery"><i /></span></span></div><div className="login-brand"><div className="logo-mark"><Navigation size={21} fill="white" /></div><span>Ride<span>Sathi</span></span><small>VERIFIED LOCAL RIDES</small></div><div className="login-hero"><div className="login-map"><div className="login-road road-one" /><div className="login-road road-two" /><div className="login-road road-three" /><span className="login-map-pin"><MapPin size={27} fill={colors.orange} /></span><span className="login-map-dot dot-one" /><span className="login-map-dot dot-two" /></div><div className="login-hero-copy"><span className="eyebrow">YOUR RIDE, YOUR SATHI</span><h1>See Mount Abu<br /><em>your way.</em></h1><p>Verified rentals for unhurried hill days.</p></div></div><div className="login-card"><div className="role-selector"><button className={role === 'traveler' ? 'active' : ''} onClick={() => { setRole('traveler'); setEmail('traveler@demo.com'); }}>Traveler</button><button className={role === 'operator' ? 'active' : ''} onClick={() => { setRole('operator'); setEmail('operator@demo.com'); }}>Operator</button><button className={role === 'admin' ? 'active' : ''} onClick={() => { setRole('admin'); setEmail('admin@demo.com'); }}>Admin</button></div><div className="login-fields"><label><span>Email address</span><div className="input-wrap"><Smartphone size={17} /><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></div></label><label><span>Password</span><div className="input-wrap"><LockKeyhole size={17} /><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} /><button><EyeIcon /></button></div></label></div><button className="primary-btn login-btn" onClick={onLogin}>Continue to RideSathi <ArrowRight size={17} /></button><div className="demo-helper"><span>DEMO ACCESS</span><p>Tap a role to explore the full experience</p><div className="demo-links"><button onClick={() => onDemo('traveler')}><CircleUserRound size={14} /> Traveler <ArrowRight size={13} /></button><button onClick={() => onDemo('operator')}><Bike size={14} /> Operator <ArrowRight size={13} /></button><button onClick={() => onDemo('admin')}><ShieldCheck size={14} /> Admin <ArrowRight size={13} /></button></div></div></div><p className="login-footer"><ShieldCheck size={13} /> Safe, verified rentals · Mount Abu pilot</p></div>;
+}
+
+function BottomTabs({ tabs, active, onChange }: { tabs: { key: Screen; label: string; icon: LucideIcon }[]; active: Screen; onChange: (key: Screen) => void }) {
+  return <nav className="bottom-tabs">{tabs.map((tab) => <button key={tab.key} className={active === tab.key ? 'active' : ''} onClick={() => onChange(tab.key)}><Icon icon={tab.icon} size={20} /><span>{tab.label}</span>{tab.key === 'alerts' && <b className="tab-alert">1</b>}</button>)}</nav>;
+}
+
+function AppHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: ReactNode }) {
+  return <header className="app-header"><div><h1>{title}</h1>{subtitle && <p>{subtitle}</p>}</div>{action}</header>;
+}
+
+function DetailHeader({ title, step, onBack }: { title: string; step?: string; onBack?: () => void }) {
+  return <header className="detail-header"><button className="icon-btn" onClick={onBack ?? (() => window.history.back())}><ArrowLeft size={20} /></button><div><strong>{title}</strong>{step && <span>{step}</span>}</div><button className="icon-btn" onClick={() => undefined}><MoreHorizontal size={19} /></button></header>;
+}
+
+function FilterChip({ label, active, onClick }: { label: string; active?: boolean; onClick?: () => void }) {
+  return <button className={active ? 'filter-chip active' : 'filter-chip'} onClick={onClick}>{label}{active && <Check size={13} />}</button>;
+}
+
+function StatusBadge({ status }: { status: string }) {
+  return <span className={`status-badge ${status.toLowerCase().replace(/ /g, '-')}`}><i />{status}</span>;
+}
+function SOSBadge({ status }: { status: string }) {
+  return <span className={`sos-badge ${status.toLowerCase()}`}><i />{status}</span>;
+}
+
+function InfoTile({ icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
+  return <div className="info-tile"><Icon icon={icon} size={17} /><span>{label}</span><strong>{value}</strong></div>;
+}
+function InfoLine({ icon, label, value, green }: { icon: LucideIcon; label: string; value: string; green?: boolean }) {
+  return <div className="info-line"><Icon icon={icon} size={17} /><span>{label}</span><strong className={green ? 'green-text' : ''}>{value}</strong></div>;
+}
+function ProfileRow({ icon, title, subtitle, onClick }: { icon: LucideIcon; title: string; subtitle: string; onClick?: () => void }) {
+  return <button className="profile-row" onClick={onClick}><div className="profile-row-icon"><Icon icon={icon} size={17} /></div><div><strong>{title}</strong><span>{subtitle}</span></div><ChevronRight size={17} /></button>;
+}
+function QuickAction({ icon, label, onClick }: { icon: LucideIcon; label: string; onClick: () => void }) {
+  return <button className="quick-action" onClick={onClick}><div><Icon icon={icon} size={20} /></div><span>{label}</span></button>;
+}
+function MetricTile({ label, value, trend, icon, blue, orange, red }: { label: string; value: string; trend: string; icon: LucideIcon; blue?: boolean; orange?: boolean; red?: boolean }) {
+  return <div className={`metric-tile ${blue ? 'blue' : ''} ${orange ? 'orange' : ''} ${red ? 'red' : ''}`}><div className="metric-icon"><Icon icon={icon} size={16} /></div><span>{label}</span><strong>{value}</strong><small>{trend}</small></div>;
+}
+function EmptyHint({ icon, title, text, action, onClick }: { icon: LucideIcon; title: string; text: string; action: string; onClick: () => void }) {
+  return <div className="empty-hint"><div className="empty-icon"><Icon icon={icon} size={24} /></div><h3>{title}</h3><p>{text}</p><button className="text-btn" onClick={onClick}>{action} <ArrowRight size={14} /></button></div>;
+}
+function Field({ label, value, icon, helper, onChange, placeholder }: { label: string; value?: string; icon?: LucideIcon; helper?: string; onChange?: (value: string) => void; placeholder?: string }) {
+  return <label className="field-label">{label}<div className="field-input">{icon && <Icon icon={icon} size={17} />}<input value={value ?? ''} onChange={(e) => onChange?.(e.target.value)} placeholder={placeholder} /></div>{helper && <small className="field-helper">{helper}</small>}</label>;
+}
+function SelectField({ label, value, icon }: { label: string; value: string; icon: LucideIcon }) {
+  return <label className="field-label">{label}<div className="field-input select-input"><Icon icon={icon} size={17} /><select defaultValue={value}><option>Aadhaar</option><option>Passport</option><option>Voter ID</option><option>Other</option></select><ChevronDown size={15} /></div></label>;
+}
+function UploadField({ label }: { label: string }) {
+  return <button className="upload-field"><div className="upload-icon"><Upload size={17} /></div><div><strong>{label}</strong><span>JPG or PDF · max 5 MB</span></div><Plus size={17} /></button>;
+}
+function CheckRow({ label }: { label: string }) {
+  return <label className="check-row"><input type="checkbox" defaultChecked /><span className="check-box"><Check size={13} /></span><span>{label}</span><CheckCircle2 size={17} color={colors.green} /></label>;
+}
+function FakeQR({ token, small = false }: { token: string; small?: boolean }) {
+  const cells = useMemo(() => Array.from({ length: 225 }, (_, index) => { const x = index % 15; const y = Math.floor(index / 15); const finder = (x < 5 && y < 5) || (x > 9 && y < 5) || (x < 5 && y > 9); const border = finder && (x === 0 || x === 4 || y === 0 || y === 4 || (x > 9 && (x === 10 || x === 14 || y === 0 || y === 4)) || (x < 5 && (y === 10 || y === 14))); const inner = finder && ((x === 2 && y === 2) || (x === 12 && y === 2) || (x === 2 && y === 12)); return finder ? border || inner : ((x * 13 + y * 7 + token.length) % 5 < 2); }), [token]);
+  return <div className={small ? 'fake-qr small' : 'fake-qr'}>{cells.map((on, i) => <i key={i} className={on ? 'on' : ''} />)}</div>;
+}
+function MapCanvas({ markerCount = 1 }: { markerCount?: number }) {
+  return <div className="map-canvas"><div className="map-water" /><div className="map-road road-1" /><div className="map-road road-2" /><div className="map-road road-3" /><div className="map-road road-4" /><span className="map-label label-lake">Nakki Lake</span><span className="map-label label-point">Sunset Point</span>{Array.from({ length: markerCount }, (_, i) => <span key={i} className="live-pin" style={{ left: `${52 + i * 13}%`, top: `${52 - i * 10}%` }}><Navigation size={18} fill={colors.green} /></span>)}<span className="user-dot" /></div>;
+}
+function MapCard({ consent, onConsent }: { consent: boolean; onConsent: () => void }) {
+  return <div className="map-card"><MapCanvas /><div className="map-card-label"><MapPin size={14} fill={colors.orange} /> Mount Abu pilot area</div><button className="locate-btn" onClick={() => consent ? undefined : onConsent()}><Navigation size={16} /></button></div>;
+}
+function Timeline({ status }: { status: string }) {
+  const active = status === 'ACTIVE';
+  const steps = active ? [['Booked', '10 Oct · 8:20 AM'], ['Confirmed', '10 Oct · 8:21 AM'], ['Active rental', 'Today · 10:30 AM']] : [['Booked', '18 Oct · 6:14 PM'], ['KYC verified', '18 Oct · 6:15 PM'], ['Confirmed', '18 Oct · 6:16 PM']];
+  return <div className="timeline">{steps.map(([name, date], i) => <div className="timeline-row" key={name}><div className={`timeline-dot ${i === steps.length - 1 ? 'current' : ''}`}><Check size={12} /></div><div><strong>{name}</strong><span>{date}</span></div>{i < steps.length - 1 && <i />}</div>)}</div>;
+}
+function ConfirmModal({ title, text, confirm, onConfirm, onClose, danger }: { title: string; text: string; confirm: string; onConfirm: () => void; onClose: () => void; danger?: boolean }) {
+  return <div className="modal-backdrop" onClick={onClose}><div className="confirm-modal" onClick={(e) => e.stopPropagation()}><button className="modal-close" onClick={onClose}><X size={18} /></button><div className={danger ? 'modal-icon danger' : 'modal-icon'}>{danger ? <ShieldAlert size={24} /> : <Info size={23} />}</div><h2>{title}</h2><p>{text}</p><div className="modal-actions"><button className="secondary-btn" onClick={onClose}>Not now</button><button className={danger ? 'danger-btn' : 'primary-btn'} onClick={onConfirm}>{confirm}</button></div></div></div>;
+}
+function FilterSheet({ onClose }: { onClose: () => void }) {
+  return <div className="sheet-backdrop" onClick={onClose}><div className="filter-sheet" onClick={(e) => e.stopPropagation()}><div className="sheet-handle" /><div className="sheet-header"><div><span className="eyebrow">REFINE SEARCH</span><h2>Find your ride</h2></div><button className="icon-btn light" onClick={onClose}><X size={18} /></button></div><div className="sheet-section"><h3>Vehicle type</h3><div className="sheet-chips"><FilterChip label="All types" active /><FilterChip label="Scooter" /><FilterChip label="Bike" /><FilterChip label="Car" /><FilterChip label="Jeep" /></div></div><div className="sheet-section"><h3>Price per day <span>₹400 – ₹3,500</span></h3><div className="price-slider"><i /><b /><i /></div></div><div className="sheet-section"><h3>Minimum rating</h3><div className="sheet-chips"><FilterChip label="Any rating" active /><FilterChip label="4.0+" /><FilterChip label="4.5+" /><FilterChip label="4.8+" /></div></div><div className="sheet-section"><h3>Availability</h3><label className="switch-row"><span>Available for my dates</span><label className="toggle"><input type="checkbox" defaultChecked /><span /></label></label></div><button className="primary-btn full-btn" onClick={onClose}>Show 7 rides <ArrowRight size={17} /></button></div></div>;
+}
+function FeedbackScreen({ onBack, onSubmit }: { onBack: () => void; onSubmit: () => void }) {
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState('');
+  return <div className="screen scroll-screen detail-screen"><DetailHeader title="Share your experience" onBack={onBack} /><div className="feedback-hero"><div className="feedback-orbit"><Star size={26} fill="currentColor" /></div><h1>How was your ride?</h1><p>Your review helps other travelers ride with confidence.</p></div><div className="feedback-form"><div className="rating-question"><span>Rate the vehicle</span><div className="large-stars">{[1, 2, 3, 4, 5].map((i) => <button key={i} onClick={() => setRating(i)}><Star size={33} fill={i <= rating ? colors.orange : 'none'} color={i <= rating ? colors.orange : '#cbd3ce'} /></button>)}</div><small>{rating === 5 ? 'Loved it' : 'Thanks for your honesty'}</small></div><label className="field-label">Tell us more<textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="What made your trip better?" /></label><div className="feedback-tags"><button>Clean vehicle</button><button>Easy pickup</button><button>Friendly operator</button></div></div><button className="primary-btn full-btn" onClick={onSubmit}>Submit review <Send size={16} /></button></div>;
+}
+function ApprovalCard({ initials, title, subtitle, type, approve, reject }: { initials: string; title: string; subtitle: string; type: string; approve: () => void; reject: () => void }) {
+  return <div className="approval-card"><div className="approval-main"><div className="big-avatar">{initials}</div><div><span className="approval-type">{type}</span><h3>{title}</h3><p>{subtitle}</p></div><MoreHorizontal size={18} /></div><div className="document-row"><span><FileCheck2 size={14} /> Documents uploaded</span><span><Clock3 size={14} /> Needs review</span></div><div className="approval-actions"><button className="secondary-btn" onClick={reject}>Reject</button><button className="primary-btn" onClick={approve}>Approve <Check size={16} /></button></div></div>;
+}
+function RatingBar({ label, value }: { label: string; value: string }) { return <div className="rating-bar"><span>{label}</span><i><b style={{ width: value }} /></i><small>{value}</small></div>; }
+function ReviewCard({ initials, name, rating, date, vehicle, text }: { initials: string; name: string; rating: number; date: string; vehicle: string; text: string }) { return <div className="review-card"><div className="review-head"><div className="row-avatar">{initials}</div><div><strong>{name}</strong><span>{date} · {vehicle}</span></div><div className="review-stars">{'★'.repeat(rating)}</div></div><p>“{text}”</p></div>; }
+function EyeIcon() { return <span className="eye-icon">◉</span>; }
+function PasteIcon() { return <span className="paste-icon">⌁</span>; }
+function WrenchIcon() { return <span className="wrench-icon">⌁</span>; }
+
+export default App;
